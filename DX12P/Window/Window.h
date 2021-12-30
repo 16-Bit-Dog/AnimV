@@ -12,15 +12,14 @@
 #include <../GLFW/glfw3.h>
 #include <../GLFW/glfw3native.h>
 
-#include <../Renderer/DX12H.h>
+#include <../Renderer/DX11H.h>
 #include <../imGUI/imgui.h>
 #include <../imGUI/imgui_impl_glfw.h>
-#include <../imGUI/imgui_impl_dx12.h>
 #include <../Window/GUI_Logic.h>
 #include <../Window/WindowType.h>
 
 struct MASTER_IM_GUI;
-struct MainDX12Objects;
+struct MainDX11Objects;
 struct MASTER_Setting;
 struct MASTER_Scene;
 struct MASTER_Editor;
@@ -83,26 +82,17 @@ void GLFW_Window_C::CleanSwapChain() {
 }
 
 void GLFW_Window_C::FillDXMWithNewGLFW() {
-	DXM.MakeNewWindowSwapChainAndAssociate(glfwGetWin32Window(window), Width, Height);
+	DXM.MakeNewWindowSwapChainAndAssociate(window, glfwGetWin32Window(window), Width, Height);
 }
 
 int GLFW_Window_C::CreateWindowM(int Swidth, int Sheight, std::string Stitle, int WinType = 1) {
 	//kept this as a back bone from what I prev' did for window creation
 	if (Created == false) {
 		C_GUI_Win.push_back(new GroupData());
-		C_GUI_Win.push_back(new GroupData());
-		C_GUI_Win.push_back(new GroupData());
-		C_GUI_Win.push_back(new GroupData());
-
-		C_GUI_Win[0]->LinkToSettings();
+		
+		C_GUI_Win[0]->LinkBasedOnInt(1);
 		C_GUI_Win[0]->ID = GLOBAL_WINDOW_ID_I();
-		C_GUI_Win[1]->LinkToScene();
-		C_GUI_Win[1]->ID = GLOBAL_WINDOW_ID_I();
-		C_GUI_Win[2]->LinkToEditor();
-		C_GUI_Win[2]->ID = GLOBAL_WINDOW_ID_I();
-		C_GUI_Win[3]->LinkToPipeline();
-		C_GUI_Win[3]->ID = GLOBAL_WINDOW_ID_I();
-
+		
 		Width = Swidth;
 		Height = Sheight;
 		title = Stitle;
@@ -129,7 +119,7 @@ int GLFW_Window_C::RunWindowLogic() {
 	if (C_GUI_Win.size() == 0) {
 		C_GUI_Win.push_back(new GroupData());
 
-		C_GUI_Win[0]->LinkToSettings();
+		C_GUI_Win[0]->LinkBasedOnInt(1);
 		C_GUI_Win[0]->ID = GLOBAL_WINDOW_ID_I();
 	}
 
@@ -190,20 +180,22 @@ void AllWindowDrawLoop::LoopRunAllContext() {
 		for (int i = 0; i < WinList.size(); i++) {
 			WinList[i]->id = i;
 		}
+
+		DXM.ImGUINewFrameLogic();
+
 		for (int i = 0; i < WinList.size(); i++) {
 
 				CurrWindow = i;
 
 				glfwMakeContextCurrent(WinList[i]->window);
 				glfwPollEvents();
-				ImGui_ImplDX12_NewFrame();
-				ImGui_ImplGlfw_NewFrame();
-				ImGui::NewFrame();
+				
 
 				WinList[i]->RunWindowLogic();
 
-				MASTER_IM_GUI_obj.EndRender();
+
 		}
-		
+
+		MASTER_IM_GUI_obj.EndRender();
 	}
 }

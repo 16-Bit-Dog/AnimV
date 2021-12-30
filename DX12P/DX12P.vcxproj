@@ -24,6 +24,7 @@
     <ProjectGuid>{b43922ba-0baf-4590-bf66-b16816f32196}</ProjectGuid>
     <RootNamespace>DX12P</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>AnimV</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -120,7 +121,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)/Renderer;$(ProjectDir)/GLFW;$(ProjectDir)/imGUI;$(ProjectDir)/Window</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)/Renderer;$(ProjectDir)/GLFW;$(ProjectDir)/imGUI;$(ProjectDir)/Window;$(ProjectDir)/Special_DX_Headers</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -138,27 +139,40 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)/Renderer;$(ProjectDir)/GLFW;$(ProjectDir)/imGUI;$(ProjectDir)/Window;$(ProjectDir)/Special_DX_Headers</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(ProjectDir)/GLFW</AdditionalLibraryDirectories>
+      <AdditionalDependencies>DXGI.lib;D3d12.lib;glfw3.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="imGUI\imgui.cpp" />
+    <ClCompile Include="imGUI\ImGUIFileDialog\ImGuiFileDialog.cpp" />
     <ClCompile Include="imGUI\imgui_demo.cpp" />
     <ClCompile Include="imGUI\imgui_draw.cpp" />
-    <ClCompile Include="imGUI\imgui_impl_dx12.cpp" />
+    <ClCompile Include="imGUI\imgui_impl_dx11.cpp" />
     <ClCompile Include="imGUI\imgui_impl_glfw.cpp" />
     <ClCompile Include="imGUI\imgui_stdlib.cpp" />
     <ClCompile Include="imGUI\imgui_tables.cpp" />
     <ClCompile Include="imGUI\imgui_widgets.cpp" />
     <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Special_DX_Headers\WICTextureLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="imGUI\ImGUIFileDialog\ImGuiFileDialog.h" />
+    <ClInclude Include="imGUI\ImGUIFileDialog\ImGuiFileDialogConfig.h" />
+    <ClInclude Include="imGUI\imgui_impl_dx11.h" />
     <ClInclude Include="imGUI\imgui_stdlib.h" />
+    <ClInclude Include="Renderer\DX11H.h" />
+    <ClInclude Include="Renderer\DX11ShaderFunc\ShaderFuncs.h" />
+    <ClInclude Include="Special_DX_Headers\ffmpegVideoWork.h" />
+    <ClInclude Include="Special_DX_Headers\WICTextureLoader.h" />
     <ClInclude Include="Window\Editor_Window.h" />
     <ClInclude Include="Window\Pipeline_Window.h" />
     <ClInclude Include="Window\Scene_Window.h" />
@@ -167,14 +181,11 @@
     <ClInclude Include="Window\GUI_Logic.h" />
     <ClInclude Include="imGUI\imconfig.h" />
     <ClInclude Include="imGUI\imgui.h" />
-    <ClInclude Include="imGUI\imgui_impl_dx12.h" />
     <ClInclude Include="imGUI\imgui_impl_glfw.h" />
     <ClInclude Include="imGUI\imgui_internal.h" />
     <ClInclude Include="imGUI\imstb_rectpack.h" />
     <ClInclude Include="imGUI\imstb_textedit.h" />
     <ClInclude Include="imGUI\imstb_truetype.h" />
-    <ClInclude Include="Renderer\DX12H.h" />
-    <ClInclude Include="Special_DX_Headers\d3dx12.h" />
     <ClInclude Include="Window\Window.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

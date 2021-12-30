@@ -6,10 +6,10 @@
 #include <iostream>
 #include <../GLFW/glfw3.h>
 #include <../GLFW/glfw3native.h>
-#include <../Renderer/DX12H.h>
+#include <../Renderer/DX11H.h>
 #include <../Window/Window.h>
 
-struct MainDX12Objects;
+struct MainDX11Objects;
 struct GLFW_Window_C;
 struct AllWindowDrawLoop;
 
