@@ -1,0 +1,8 @@
+Debug/
+x64/
+.vs/
+.git/
+DX12P/Debug/
+DX12P/x64/
+DX12P/x64/
+DX12P/imGUI/imgui-docking/
