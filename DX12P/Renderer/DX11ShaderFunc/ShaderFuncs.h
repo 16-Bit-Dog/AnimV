@@ -45,7 +45,7 @@ inline void SafeRelease(T& ptr)
     if (ptr != NULL)
     {
         ptr->Release();
-        ptr = NULL;
+//        ptr = NULL;
     }
 }
 

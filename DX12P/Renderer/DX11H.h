@@ -2,6 +2,8 @@
 //finally I will try to use com_ptr's
 
 //TODO: fix memory leak I have when cleaning images from map?!?
+//TODO: add live change programming and "show output" - call it "pass1""pass2" as folders, and it pulls from these to compile result video
+//also have "display video <-- split video has same formating for name as ffmpeg"
 
 #define WIN32_LEAN_AND_MEAN
 // DirectX 11 & windows specific headers.
@@ -124,6 +126,7 @@ struct MainDX11Objects {
         if (FFMPEG.ShowOutputPicture) {
             CopyOutputPicture(frame);
         }
+        glfwPollEvents();
         DrawLogic();
         
     }
@@ -149,6 +152,8 @@ struct MainDX11Objects {
         D3D11_TEXTURE2D_DESC d;
         ComPtr<ID3D11Texture2D> tex;
         Pic.As(&tex);
+
+        SafeRelease(Pic);
 
         tex->GetDesc(&d);
 
@@ -349,8 +354,10 @@ struct MainDX11Objects {
             "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
             "void CS_main(ComputeShaderInput IN){\n"
             "int2 texCoord = IN.dispatchThreadID.xy;"
-            "for(int i = 0; i < SampleSize; i++){\n"
-            "OutT[IN.dispatchThreadID.xy]+=tex[i].Load(int3(texCoord,0));\n"
+            "OutT[IN.dispatchThreadID.xy] = tex[0].Load(int3(texCoord,0));"
+            "[unroll]"
+            "for(int i = 1; i < SampleSize; i++){\n"
+            "OutT[IN.dispatchThreadID.xy] -= tex[i].Load(int3(texCoord,0))/SampleSize;\n"
             "\n"
             "}\n"
             "OutT[IN.dispatchThreadID.xy]=OutT[IN.dispatchThreadID.xy]/SampleSize;\n"
@@ -523,6 +530,7 @@ struct MainDX11Objects {
                 if (InUseData.count(i.first) == 0) {
                     ID3D11Resource* r = GetResourceOfUAVSRV(i.second);
                     SafeRelease(r);
+                    SafeRelease(i.second);
                     ToErase.push_back(i.first);
                 }
             }
@@ -550,6 +558,7 @@ struct MainDX11Objects {
         for (auto i : (*m) ) {
             ID3D11Resource* TexO = nullptr;
             i.second->GetResource(&TexO);
+            SafeRelease(i.second);
             SafeRelease(TexO);
         }
         PerFrameRMap.clear();
@@ -609,7 +618,7 @@ struct MainDX11Objects {
         //CleanCacheResourceMap(&PerFrameRMap);
         SafeRelease(Constants);
         Constants = nullptr;
-        
+        ResizeWindowAndViewport(1000, 1000, DXGI_FORMAT_R8G8B8A8_UNORM);
     }
     
 
@@ -680,6 +689,8 @@ struct MainDX11Objects {
         HRESULT d = CreateWICTextureFromFile(dxDevice.Get(), dxDeviceContext.Get(),
             ws, &tex, &srv, 0);//TODO: delete all mip's
         
+        SafeRelease(tex);
+
         return { srv, d };
 
     }

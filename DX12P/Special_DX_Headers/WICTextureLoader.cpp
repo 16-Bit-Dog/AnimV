@@ -470,7 +470,7 @@ static HRESULT CreateTextureFromWIC(_In_ ID3D11Device* d3dDevice,
         hr = d3dDevice->CheckFormatSupport(format, &fmtSupport);
         if (SUCCEEDED(hr) && (fmtSupport & D3D11_FORMAT_SUPPORT_MIP_AUTOGEN))
         {
-            autogen = true;
+            autogen = false; //remove mip map auto gen, changed by me, not default api; its just wasted memory for me for now
         }
     }
 

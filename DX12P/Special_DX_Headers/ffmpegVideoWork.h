@@ -24,7 +24,7 @@ struct FFMPEG_VIDEO_WORKER {
 	//toggle bools for compute
 	bool CacheVideoImages = false; // takes and caches main images in split images folder
 	bool ShowOutputPicture = true;
-	bool ComputePixelChangeFrequency = true; //means motion happened
+	bool ComputePixelChangeFrequency = false; //means motion happened
 	
 	
 	//dir file path additions
