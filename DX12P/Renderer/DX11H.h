@@ -48,6 +48,9 @@ struct Vertex {
 };
 
 struct MainDX11Objects {
+    bool ClearRTV = true;
+
+    int TargetFrameRate = 24;
 
     int SampleSize = 3; //+- 3 frame + 1 current
 
@@ -66,7 +69,7 @@ struct MainDX11Objects {
     
     ComPtr<ID3D11Device5> dxDevice = 0;
     ComPtr<ID3D11DeviceContext4> dxDeviceContext = 0;
-    IDXGISwapChain1* dxSwapChain = 0;
+    IDXGISwapChain1* dxSwapChain = nullptr;
 
     D3D11_DEPTH_STENCIL_VIEW_DESC dxDepthStencilDesc{
     DXGI_FORMAT_D32_FLOAT,D3D11_DSV_DIMENSION_TEXTURE2D
@@ -97,14 +100,24 @@ struct MainDX11Objects {
     }
     void DrawLogic() {
 
+        if (NewImGUIDat) {
+            ImGui::Render();
+        }
         dxDeviceContext->OMSetRenderTargets(1, &dxRenderTargetView, NULL);
-        ClearBuffer({ 0.0f,0.5f,0.0f,1.0f }, true);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        ImGui::UpdatePlatformWindows();
-        ImGui::RenderPlatformWindowsDefault();
+        if (ClearRTV == true) {
+            ClearBuffer({ 0.0f,0.5f,0.0f,1.0f }, true);
+        }
+        ClearRTV = true;
+
+        if (NewImGUIDat) {
+            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+        }
 
         dxSwapChain->Present(1, 0); // Present with vsync
 
+        NewImGUIDat = false;
     }
     void StopStallAndCheckPic(int frame) {
         if (FFMPEG.ShowOutputPicture) {
@@ -125,17 +138,23 @@ struct MainDX11Objects {
         ID3D11Resource* rtvR = nullptr;
         dxRenderTargetView->GetResource(&rtvR);
 
-        ID3D11Resource* Pic = nullptr;
+        ComPtr<ID3D11Resource> Pic;
         if (FFMPEG.ComputePixelChangeFrequency) {
             Pic = GetResourceOfUAVSRV(PixelFMap[frame]);
         }
         else{
             Pic = GetResourceOfUAVSRV(PerFrameRMap[frame]);
         }
+        D3D11_TEXTURE2D_DESC d;
+        ComPtr<ID3D11Texture2D> tex;
+        Pic.As(&tex);
+
+        tex->GetDesc(&d);
+
+        //dxDeviceContext->CopyResource(rtvR, Pic);
+        dxDeviceContext->ResolveSubresource(rtvR,0,Pic.Get(),0,d.Format); //ignore mip copy
         
-
-        dxDeviceContext->CopyResource(rtvR, Pic);
-
+        ClearRTV = false;
     }
 
     void CreateSwapChainAndAssociate(DXGI_FORMAT format) {
@@ -152,16 +171,27 @@ struct MainDX11Objects {
         swapChainDescF.Scaling = DXGI_MODE_SCALING_STRETCHED;
         swapChainDescF.RefreshRate = refreshRateStatic;
         swapChainDescF.Windowed = !bFullScreen;
-
-        dxFactory->CreateSwapChainForHwnd(dxDevice.Get(), hwnd, &swapChainDescW, &swapChainDescF, NULL, &dxSwapChain);
-
-        ID3D11Texture2D* backBuffer;
-        dxSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer);
-
+        
         if (dxRenderTargetView != nullptr) {
             SafeRelease(dxRenderTargetView);
         }
+        if ((dxDepthStencilBuffer) == nullptr) {
+            SafeRelease(dxDepthStencilBuffer);
+        }
 
+        if (dxSwapChain != nullptr) {
+            dxDeviceContext->ClearState();
+            dxDeviceContext->Flush();
+
+            dxSwapChain->ResizeBuffers(0, Width, Height, format, swapChainDescW.Flags);
+        }
+        else {
+            ThrowFailed(dxFactory->CreateSwapChainForHwnd(dxDevice.Get(), hwnd, &swapChainDescW, &swapChainDescF, NULL, &dxSwapChain));
+        }
+
+        ID3D11Texture2D* backBuffer;
+        dxSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer);
+    
         dxDevice->CreateRenderTargetView(
             backBuffer,
             nullptr,
@@ -189,6 +219,8 @@ struct MainDX11Objects {
             &depthStencilBufferDesc,
             nullptr,
             &dxDepthStencilBuffer);
+
+
 
         dxDevice->CreateDepthStencilView(
             dxDepthStencilBuffer,
@@ -261,6 +293,8 @@ struct MainDX11Objects {
     
 
     int BLOCK_SIZE = 16;
+    
+    bool NewImGUIDat = false;
 
     struct ConstantsDataStruct {
         int DepthSizeX;
@@ -290,27 +324,18 @@ struct MainDX11Objects {
             "cbuffer ConstData : register(b0){\n"
             "int DepthSizeX;\n"
             "int DepthSizeY;\n"
-            "UINT pad4;\n"
-            "UINT pad1;\n"
-            "UINT[3] numTG;\n"
-            "UINT pad2;\n"
-            "UINT[3] TG;\n"
-            "UINT pad3;\n"
+            "uint pad4;\n"
+            "uint pad1;\n"
+            "uint3 numTG;\n"
+            "uint pad2;\n"
+            "uint3 TG;\n"
+            "uint pad3;\n"
             "}\n"
 
             "RWTexture2D<float4> OutTexture : register(u0);\n"
-            
-            "Texture2D tex0 : register(t0); \n"//compare texture is 0 
-            "Texture2D tex1 : register(t1); \n"
-            "Texture2D tex2 : register(t2); \n"
-            "Texture2D tex3 : register(t3); \n"
-            "Texture2D tex4 : register(t4); \n"
-            "Texture2D tex5 : register(t5); \n"
-            "Texture2D tex6 : register(t6); \n"
-            "Texture2D tex7 : register(t7); \n"
-            "Texture2D tex8 : register(t8); \n"
-            "Texture2D tex9 : register(t9); \n"
-            "Texture2D tex10 : register(t10); \n"
+            "#define SampleSize "+ std::to_string(SampleSize*2+1)+"\n"
+            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
+
 
             "struct ComputeShaderInput\n"
             "{\n"
@@ -353,10 +378,11 @@ struct MainDX11Objects {
         PixelFrequencyCalc = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
 
     }
-    void RunPixelFrequency(ID3D11UnorderedAccessView* uav, ID3D11ShaderResourceView* srv[10]) {
+    void RunPixelFrequency(ID3D11UnorderedAccessView* uav, std::vector<ID3D11ShaderResourceView*>* srv) {
         dxDeviceContext->CSSetUnorderedAccessViews(0,1,&uav,0);
         
-        dxDeviceContext->CSSetShaderResources(0, 10, srv);
+
+        dxDeviceContext->CSSetShaderResources(0, srv->size(), srv->data());
 
         dxDeviceContext->CSSetConstantBuffers(0, 1, &Constants);
 
@@ -368,9 +394,7 @@ struct MainDX11Objects {
         D3D11_BUFFER_DESC bufDesc;
         ZeroMemory(&bufDesc, sizeof(bufDesc));
         bufDesc.Usage = D3D11_USAGE_DEFAULT;
-        bufDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        bufDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-        bufDesc.CPUAccessFlags = 0;
+        bufDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         bufDesc.ByteWidth = sizeof(ConstantsDataStruct);
         bufDesc.StructureByteStride = sizeof(UINT);
         dxDevice->CreateBuffer(&bufDesc, nullptr, &Constants);
@@ -383,7 +407,7 @@ struct MainDX11Objects {
         Width = NewWidth;
         Height = NewHeight;
         CreateSwapChainAndAssociate(format);
-
+        DrawLogic();
     }
     void MakeShadersAndConstantsData(ID3D11ShaderResourceView* srv) {
         D3D11_TEXTURE2D_DESC d;
@@ -446,32 +470,44 @@ struct MainDX11Objects {
     void ComputePassLogicFrame(int i) {
         int total = SampleSize * 2 + 1;
         int cur = i;
-        int bottom = i - 3;
-        int top = i + 3;
+        int bottom = i - SampleSize;
+        int top = i + SampleSize;
         int filled = 1;
 
         std::vector<ID3D11ShaderResourceView*> srv(total); //the 10 srvs - 0 is curr frame
         srv[0] = PerFrameRMap[cur];
-        if (bottom < 0) {
-            bottom = cur + 1;
-            top = bottom + SampleSize * 2;
+        if (bottom < 1) {
+            int SetBottom = cur;
+            for (int y = SampleSize; y>-SampleSize; y--) {
+                if (SetBottom - y > 0) {
+                    bottom = cur - y;
+                    top = cur + (SampleSize - y) + SampleSize;
+                    y = -SampleSize;
+                }
+            }
         }
-        if (top > PerFrameRMap.size()) {
-
-            top = cur - 1;
-            bottom = top - SampleSize * 2;
+        else if (PerFrameRMap.count(top)==0) { // unbound data, so I need to map count - unless I pre pass max size - won't run for pre cache, so only checks in CPU cache around 7-10 items, so this is very fast despite looking to have a poor worst case' worst case will never be reached
+            int SetTop = cur;
+            for (int y = SampleSize; y > -SampleSize; y--) {
+                if (PerFrameRMap.count(SetTop + y)>0) {
+                    top = cur + y;
+                    bottom = cur - (SampleSize - y) - SampleSize;
+                    y = -SampleSize;
+                }
+            }
         }
 
 
         std::map<int, ID3D11ShaderResourceView*> InUseData; //remove not needed data
+      
         if(!FFMPEG.CacheVideoImages)
-        InUseData[cur] = PerFrameRMap[cur];
+            InUseData[cur] = PerFrameRMap[cur];
 
-        for (int x = bottom; x < top; x++) {
+        for (int x = bottom; x < top+1; x++) {
             if (x != cur) {
                 
                 if (!FFMPEG.CacheVideoImages)
-                    InUseData[cur] = PerFrameRMap[x];
+                    InUseData[x] = PerFrameRMap[x];
 
                 srv[filled] = PerFrameRMap[x];
                 filled += 1;
@@ -480,12 +516,16 @@ struct MainDX11Objects {
 
         if (!FFMPEG.CacheVideoImages) {
             //clean not used data for non cached work
+            std::vector<int> ToErase;
             for (auto i : PerFrameRMap) {
                 if (InUseData.count(i.first) == 0) {
                     ID3D11Resource* r = GetResourceOfUAVSRV(i.second);
                     SafeRelease(r);
-                    PerFrameRMap.erase(i.first);
+                    ToErase.push_back(i.first);
                 }
+            }
+            for (auto i : ToErase) {
+                PerFrameRMap.erase(i); //if I erase in iterator it crashes due to refrencing a non existant object in a logical loop, so I cache all "to delete" object
             }
 
         }
@@ -495,7 +535,7 @@ struct MainDX11Objects {
         if (FFMPEG.ComputePixelChangeFrequency) {
             MakeEmptyUAVfromSRVIntoMap(&PixelFMap, PerFrameRMap[i], i);
 
-            RunPixelFrequency(PixelFMap[i], srv.data());
+            RunPixelFrequency(PixelFMap[i], &srv);
         }
         //
 
@@ -539,15 +579,32 @@ struct MainDX11Objects {
             }
         }
         else {
-            ComputePassLogicFrame(i); //for frame 1
+            int LastTmp = 0;
+            int tmp = i;
+            while (tmp < SampleSize * 2 + 2) {
+                AddMainResourceToMapFromFile(&psp, tmp); //for frame 1
+                tmp++;
+            }
+
+            ComputePassLogicFrame(i);
             i += 1;
-            while (AddMainResourceToMapFromFile(&psp, i)) {
+            bool h = false;
+            while (i!=tmp) {
+                if (i > SampleSize + 1) {
+                    h = AddMainResourceToMapFromFile(&psp, tmp);
+                }
+                if (h) {
+                    tmp += 1;
+                }
+                h = false;
+
                 ComputePassLogicFrame(i);
+                
                 i += 1;
             }
         }
         
-        CleanCacheResourceMap(&PerFrameRMap);
+        //CleanCacheResourceMap(&PerFrameRMap);
         SafeRelease(Constants);
         Constants = nullptr;
         
@@ -561,6 +618,10 @@ struct MainDX11Objects {
             SafeRelease(TexO);
         }
         (*m)[frame] = MakeEmptyUAVfromSRV(srv);
+
+        FLOAT fl[4] = { 0.0f,0.0f,0.0f,1.0f };
+
+        dxDeviceContext->ClearUnorderedAccessViewFloat((*m)[frame], fl);
     }
 
     ID3D11UnorderedAccessView* MakeEmptyUAVfromSRV(ID3D11ShaderResourceView* srv) {
@@ -574,12 +635,15 @@ struct MainDX11Objects {
         
         ID3D11Texture2D* texUAV;
 
+        d.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
+
         dxDevice->CreateTexture2D(&d, NULL, &texUAV);
 
         D3D11_UNORDERED_ACCESS_VIEW_DESC uavs;
         uavs.Format = d.Format;
         uavs.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
-            
+        uavs.Texture2D.MipSlice = 0;
+
         ID3D11UnorderedAccessView* uav;
 
         dxDevice->CreateUnorderedAccessView(texUAV,&uavs,&uav);
@@ -588,26 +652,33 @@ struct MainDX11Objects {
     }
 
     void GetTextureFromPathIntoMap(std::string* path, int frame) {
-        ID3D11ShaderResourceView* srv = GetTextureFromPath(path);
-        if (PerFrameRMap.count(frame) > 0) {
+        std::pair<ID3D11ShaderResourceView*, HRESULT> srv = GetTextureFromPath(path);
+        /*if (PerFrameRMap.count(frame) > 0) {
             ID3D11Resource* TexO = nullptr;
             PerFrameRMap[frame]->GetResource(&TexO);
             SafeRelease(TexO);
+        } //should never hit this event, so I commented out
+        */
+
+        if (srv.second == S_OK) {
+            PerFrameRMap[frame] = srv.first;
         }
-        PerFrameRMap[frame] = srv;
+        else {
+
+        }
     }
 
-    ID3D11ShaderResourceView* GetTextureFromPath(std::string* path) {
+    std::pair<ID3D11ShaderResourceView*,HRESULT> GetTextureFromPath(std::string* path) {
         ID3D11Resource* tex = nullptr;
         ID3D11ShaderResourceView* srv = nullptr;
 
         CA2W ca2w(path->c_str());
         LPWSTR ws = LPWSTR(ca2w);
         
-        CreateWICTextureFromFile(dxDevice.Get(), dxDeviceContext.Get(),
-            ws, &tex, &srv, UINTMAX_MAX);
-               
-        return srv;
+        HRESULT d = CreateWICTextureFromFile(dxDevice.Get(), dxDeviceContext.Get(),
+            ws, &tex, &srv, 0);//TODO: delete all mip's
+        
+        return { srv, d };
 
     }
 

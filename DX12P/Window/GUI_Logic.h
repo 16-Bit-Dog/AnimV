@@ -149,8 +149,8 @@ struct MASTER_IM_GUI {
 	}
 
 	void EndRender() {
-		ImGui::Render();
-
+	//	ImGui::Render();
+		DXM.NewImGUIDat = true;
 		DXM.DrawLogic();
 	}
 
@@ -438,6 +438,23 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				if (ImGui::Button("Run Compute Pass")) {
 					DXM.StartComputePass();
 				}
+				ImGui::SameLine();
+				ImGui::HelpMarker("Compute Data needed for compiling video");
+
+
+				ImGui::Separator();
+				ImGui::Separator();
+				
+				ImGui::InputInt("Enter Target Output FPS", &DXM.TargetFrameRate);
+				ImGui::SameLine();
+				ImGui::HelpMarker("The Frame rate the program assumes the original video as\n\nFind the frame rate (round it) in\nRight_Click_File->Properties->Details->Frame_Rate");
+
+				ImGui::InputInt("Enter Target Output FPS", &DXM.TargetFrameRate);
+				
+				if (ImGui::Button("Compile Video")) {
+					//
+				}
+
 
 				//TODO sampleSize change input - must be less than 20
 //TODO: check box for compute passes to-do
