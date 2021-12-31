@@ -1,6 +1,7 @@
 #pragma once
 //finally I will try to use com_ptr's
 
+//TODO: fix memory leak I have when cleaning images from map?!?
 
 #define WIN32_LEAN_AND_MEAN
 // DirectX 11 & windows specific headers.
@@ -332,7 +333,7 @@ struct MainDX11Objects {
             "uint pad3;\n"
             "}\n"
 
-            "RWTexture2D<float4> OutTexture : register(u0);\n"
+            "RWTexture2D<float4> OutT : register(u0);\n"
             "#define SampleSize "+ std::to_string(SampleSize*2+1)+"\n"
             "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
 
@@ -347,12 +348,12 @@ struct MainDX11Objects {
 
             "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
             "void CS_main(ComputeShaderInput IN){\n"
+            "int2 texCoord = IN.dispatchThreadID.xy;"
+            "for(int i = 0; i < SampleSize; i++){\n"
+            "OutT[IN.dispatchThreadID.xy]+=tex[i].Load(int3(texCoord,0));\n"
             "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
+            "}\n"
+            "OutT[IN.dispatchThreadID.xy]=OutT[IN.dispatchThreadID.xy]/SampleSize;\n"
             "\n"
             "\n"
             "\n"
@@ -381,6 +382,7 @@ struct MainDX11Objects {
     void RunPixelFrequency(ID3D11UnorderedAccessView* uav, std::vector<ID3D11ShaderResourceView*>* srv) {
         dxDeviceContext->CSSetUnorderedAccessViews(0,1,&uav,0);
         
+        dxDeviceContext->CSSetShader(PixelFrequencyCalc,0,0);
 
         dxDeviceContext->CSSetShaderResources(0, srv->size(), srv->data());
 
