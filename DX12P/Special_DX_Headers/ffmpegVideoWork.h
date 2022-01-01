@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <fstream>
 
+
+
 namespace fs = std::filesystem;
 //TODO use pointers because faster - but RN its late at night and i'm feeling tired
 struct FFMPEG_VIDEO_WORKER {
@@ -24,8 +26,10 @@ struct FFMPEG_VIDEO_WORKER {
 	//toggle bools for compute
 	bool CacheVideoImages = false; // takes and caches main images in split images folder
 	bool ShowOutputPicture = true;
+	int NumToShow = 0;
+	int ComputePassCount = 1;
 	bool ComputePixelChangeFrequency = false; //means motion happened
-	
+	bool SaveTex = false;
 	
 	//dir file path additions
 	std::string imageSplit = "ImageSplit\\";

@@ -6,6 +6,7 @@
 //also have "display video <-- split video has same formating for name as ffmpeg"
 
 #define WIN32_LEAN_AND_MEAN
+const int ZERO_FILE_COUNT = 8;
 // DirectX 11 & windows specific headers.
 #include <Windows.h>
 #include <dwmapi.h>
@@ -21,6 +22,11 @@
 #include <wrl.h>
 #include <AtlBase.h>
 #include <atlconv.h>
+#include <objidl.h>
+#include <gdiplus.h>
+using namespace Gdiplus;
+#pragma comment (lib,"Gdiplus.lib")
+
 using namespace Microsoft::WRL;
 
 
@@ -39,6 +45,8 @@ using namespace Microsoft::WRL;
 #include <../imGUI/imgui_impl_glfw.h>
 #include <../imGUI/imgui_impl_dx11.h>
 #include <../Special_DX_Headers/WICTextureLoader.h>
+#include <../Special_DX_Headers/textureCap/ScreenGrab11.h>
+
 #include <../Renderer/DX11ShaderFunc/ShaderFuncs.h>
 
 
@@ -94,6 +102,12 @@ struct MainDX11Objects {
 
     DXGI_SWAP_CHAIN_DESC1 swapChainDescW; //reuse for when recreating swap chain and parts to resize screen params
     DXGI_SWAP_CHAIN_FULLSCREEN_DESC swapChainDescF;
+    
+    void addZeroes(std::string* s, int val) {
+        for (int i = 0; i < val; i++) {
+            *s += "0";
+        }
+    }
 
     void ClearBuffer(XMFLOAT4 p, bool ClearDepth) {
         float ClearColor[4] = { float(p.x), float(p.y), float(p.z), float(p.w) };
@@ -101,7 +115,7 @@ struct MainDX11Objects {
 
         if (ClearDepth) dxDeviceContext->ClearDepthStencilView(dxDepthStencilView, D3D11_CLEAR_DEPTH, 1, 0);
     }
-    void DrawLogic() {
+    void DrawLogic(bool sync) {
 
         if (NewImGUIDat) {
             ImGui::Render();
@@ -118,7 +132,7 @@ struct MainDX11Objects {
             ImGui::RenderPlatformWindowsDefault();
         }
 
-        dxSwapChain->Present(1, 0); // Present with vsync
+        dxSwapChain->Present(sync, 0); // Present with vsync
 
         NewImGUIDat = false;
     }
@@ -127,7 +141,7 @@ struct MainDX11Objects {
             CopyOutputPicture(frame);
         }
         glfwPollEvents();
-        DrawLogic();
+        DrawLogic(false);
         
     }
 
@@ -144,7 +158,7 @@ struct MainDX11Objects {
 
         ComPtr<ID3D11Resource> Pic;
         if (FFMPEG.ComputePixelChangeFrequency) {
-            Pic = GetResourceOfUAVSRV(PixelFMap[frame]);
+            Pic = GetResourceOfUAVSRV(PixelFMap[FFMPEG.NumToShow][frame]);
         }
         else{
             Pic = GetResourceOfUAVSRV(PerFrameRMap[frame]);
@@ -160,6 +174,7 @@ struct MainDX11Objects {
         //dxDeviceContext->CopyResource(rtvR, Pic);
         dxDeviceContext->ResolveSubresource(rtvR,0,Pic.Get(),0,d.Format); //ignore mip copy
         
+
         ClearRTV = false;
     }
 
@@ -178,6 +193,13 @@ struct MainDX11Objects {
         swapChainDescF.RefreshRate = refreshRateStatic;
         swapChainDescF.Windowed = !bFullScreen;
         
+        ID3D11Texture2D* backBuffer = nullptr;
+        if (dxSwapChain != nullptr) {
+            dxSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer);
+        }
+        if (backBuffer != nullptr) {
+            SafeRelease(backBuffer);
+        }
         if (dxRenderTargetView != nullptr) {
             SafeRelease(dxRenderTargetView);
         }
@@ -195,7 +217,7 @@ struct MainDX11Objects {
             ThrowFailed(dxFactory->CreateSwapChainForHwnd(dxDevice.Get(), hwnd, &swapChainDescW, &swapChainDescF, NULL, &dxSwapChain));
         }
 
-        ID3D11Texture2D* backBuffer;
+        backBuffer;
         dxSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer);
     
         dxDevice->CreateRenderTargetView(
@@ -295,7 +317,7 @@ struct MainDX11Objects {
 
 
     std::map<int, ID3D11ShaderResourceView*> PerFrameRMap;
-    std::map<int, ID3D11UnorderedAccessView*> PixelFMap;
+    std::vector<std::map<int, ID3D11UnorderedAccessView*>> PixelFMap;
     
 
     int BLOCK_SIZE = 16;
@@ -321,7 +343,32 @@ struct MainDX11Objects {
     ID3D11ComputeShader* PixelFrequencyCalc;
 
 
+    void SaveUAVTexToFile(std::map<int, ID3D11UnorderedAccessView*>* m, int Pass) {
+        std::string Fpath = FFMPEG.filePathNameStore + std::to_string(Pass) + "\\";
+        if (fs::exists(Fpath)) {
+            fs::remove_all(Fpath);
+        }
+        if (fs::is_directory(Fpath) == false) {
+            fs::create_directory(Fpath);
+        }
 
+        //start file saving
+        for (auto x : *m) {
+            std::string TrailZeros = "";
+            addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(x.first).length()));
+            TrailZeros += std::to_string(x.first) + ".png";
+            std::string FName = Fpath + TrailZeros;
+
+            CA2W ca2w(FName.c_str());
+            LPWSTR ws = LPWSTR(ca2w);
+
+            ID3D11Resource* r;
+            r = GetResourceOfUAVSRV(x.second);
+
+            SaveWICTextureToFile(dxDeviceContext.Get(), r, ImageFormatPNG, ws, &ImageFormatPNG, nullptr, false);
+            SafeRelease(r);
+        }
+    }
 
     void CreatePixelFrequencyCalcShader() {
         const std::string s = 
@@ -397,6 +444,7 @@ struct MainDX11Objects {
 
         dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
 
+        srv->clear();
     }
 
     void CreateConstantBuf() {
@@ -416,7 +464,7 @@ struct MainDX11Objects {
         Width = NewWidth;
         Height = NewHeight;
         CreateSwapChainAndAssociate(format);
-        DrawLogic();
+        DrawLogic(true);
     }
     void MakeShadersAndConstantsData(ID3D11ShaderResourceView* srv) {
         D3D11_TEXTURE2D_DESC d;
@@ -450,16 +498,10 @@ struct MainDX11Objects {
 
     }
 
-    void addZeroes(std::string* s, int val) {
-        for (int i = 0; i < val; i++) {
-            *s += "0";
-        }
-    }
-
     bool AddMainResourceToMapFromFile(std::string* psp, int val) {
 
         std::string TrailZeros = "";
-        addZeroes(&TrailZeros, (8 - std::to_string(val).length()));
+        addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(val).length()));
         TrailZeros += std::to_string(val) + ".png";
 
         std::string workS = *psp + TrailZeros;
@@ -468,7 +510,7 @@ struct MainDX11Objects {
 
             val += 1;
             TrailZeros = "";
-            addZeroes(&TrailZeros, (8 - std::to_string(val).length()));
+            addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(val).length()));
             TrailZeros += std::to_string(val) + ".png";
 
             return true;
@@ -543,13 +585,22 @@ struct MainDX11Objects {
 
 
         if (FFMPEG.ComputePixelChangeFrequency) {
-            MakeEmptyUAVfromSRVIntoMap(&PixelFMap, PerFrameRMap[i], i);
+            MakeEmptyUAVfromSRVIntoMap(&PixelFMap[0], PerFrameRMap[i], i);
 
-            RunPixelFrequency(PixelFMap[i], &srv);
+            RunPixelFrequency(PixelFMap[0][i], &srv);
         }
         //
 
         StopStallAndCheckPic(i);
+
+        for (int iter = 0; iter < PixelFMap.size(); iter++) {
+            if (FFMPEG.SaveTex) {
+                SaveUAVTexToFile(&PixelFMap[iter], iter);
+
+            }
+            CleanCacheResourceMap(&PixelFMap[iter]);
+        }
+
 
         i += 1;
     }
@@ -561,7 +612,16 @@ struct MainDX11Objects {
             SafeRelease(i.second);
             SafeRelease(TexO);
         }
-        PerFrameRMap.clear();
+        m->clear();
+    }
+    void CleanCacheResourceMap(std::map<int, ID3D11UnorderedAccessView*>* m) {
+        for (auto i : (*m)) {
+            ID3D11Resource* TexO = nullptr;
+            i.second->GetResource(&TexO);
+            SafeRelease(i.second);
+            SafeRelease(TexO);
+        }
+        m->clear();
     }
 
     void StartComputePass(){
@@ -580,6 +640,8 @@ struct MainDX11Objects {
         
         CreateConstantBuf();
         MakeShadersAndConstantsData(PerFrameRMap[1]);
+
+        PixelFMap.resize(FFMPEG.ComputePassCount);
 
         int i = 1;
         if (FFMPEG.CacheVideoImages) {
@@ -615,9 +677,13 @@ struct MainDX11Objects {
             }
         }
         
-        //CleanCacheResourceMap(&PerFrameRMap);
+        for (int i = 0; i < PixelFMap.size();i++) {
+            CleanCacheResourceMap(&PixelFMap[i]);
+        }
+        CleanCacheResourceMap(&PerFrameRMap);
         SafeRelease(Constants);
         Constants = nullptr;
+
         ResizeWindowAndViewport(1000, 1000, DXGI_FORMAT_R8G8B8A8_UNORM);
     }
     
@@ -658,6 +724,8 @@ struct MainDX11Objects {
         ID3D11UnorderedAccessView* uav;
 
         dxDevice->CreateUnorderedAccessView(texUAV,&uavs,&uav);
+
+        SafeRelease(texUAV);
 
         return uav;
     }

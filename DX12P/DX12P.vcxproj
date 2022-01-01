@@ -121,14 +121,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)/Renderer;$(ProjectDir)/GLFW;$(ProjectDir)/imGUI;$(ProjectDir)/Window;$(ProjectDir)/Special_DX_Headers</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)/Renderer;$(ProjectDir)/GLFW;$(ProjectDir)/imGUI;$(ProjectDir)/Window;$(ProjectDir)/Special_DX_Headers;$(ProjectDir)/Special_DX_Headers/textureCap/</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ProjectDir)/GLFW</AdditionalLibraryDirectories>
-      <AdditionalDependencies>DXGI.lib;D3d12.lib;glfw3.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Windowscodecs.lib;DXGI.lib;D3d12.lib;glfw3.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -140,7 +140,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)/Renderer;$(ProjectDir)/GLFW;$(ProjectDir)/imGUI;$(ProjectDir)/Window;$(ProjectDir)/Special_DX_Headers</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)/Renderer;$(ProjectDir)/GLFW;$(ProjectDir)/imGUI;$(ProjectDir)/Window;$(ProjectDir)/Special_DX_Headers;$(ProjectDir)/Special_DX_Headers/textureCap/</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -148,7 +148,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ProjectDir)/GLFW</AdditionalLibraryDirectories>
-      <AdditionalDependencies>DXGI.lib;D3d12.lib;glfw3.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Windowscodecs.lib;DXGI.lib;D3d12.lib;glfw3.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -162,6 +162,7 @@
     <ClCompile Include="imGUI\imgui_tables.cpp" />
     <ClCompile Include="imGUI\imgui_widgets.cpp" />
     <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Special_DX_Headers\textureCap\ScreenGrab11.cpp" />
     <ClCompile Include="Special_DX_Headers\WICTextureLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -172,6 +173,7 @@
     <ClInclude Include="Renderer\DX11H.h" />
     <ClInclude Include="Renderer\DX11ShaderFunc\ShaderFuncs.h" />
     <ClInclude Include="Special_DX_Headers\ffmpegVideoWork.h" />
+    <ClInclude Include="Special_DX_Headers\textureCap\ScreenGrab11.h" />
     <ClInclude Include="Special_DX_Headers\WICTextureLoader.h" />
     <ClInclude Include="Window\Editor_Window.h" />
     <ClInclude Include="Window\Pipeline_Window.h" />

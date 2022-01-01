@@ -151,7 +151,7 @@ struct MASTER_IM_GUI {
 	void EndRender() {
 	//	ImGui::Render();
 		DXM.NewImGUIDat = true;
-		DXM.DrawLogic();
+		DXM.DrawLogic(true);
 	}
 
 	
@@ -417,6 +417,9 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				ImGui::Separator();
 				ImGui::Separator();
 
+				ImGui::Checkbox("Save Video Images\n", &FFMPEG.SaveTex);
+				
+
 				ImGui::Checkbox("Cache Video Images\n", &FFMPEG.CacheVideoImages);
 				ImGui::SameLine();
 				ImGui::HelpMarker("caches split images\nExpensive on ram but should be faster");
@@ -424,6 +427,10 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				ImGui::Checkbox("Show Output During Work\n", &FFMPEG.ShowOutputPicture);
 				ImGui::SameLine();
 				ImGui::HelpMarker("ONLY shows furthest up check box\n(priority system)");
+
+				ImGui::InputInt("ComputeOutput to show", &FFMPEG.NumToShow);
+				ImGui::SameLine();
+				ImGui::HelpMarker("no compute output means that it just shows the video split into a video");
 
 				ImGui::InputInt("Enter Sample Count", &DXM.SampleSize);
 				ImGui::SameLine();

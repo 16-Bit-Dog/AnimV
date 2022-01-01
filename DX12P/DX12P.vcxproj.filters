@@ -19,7 +19,7 @@
     <Filter Include="Header Files\Window">
       <UniqueIdentifier>{73af37f7-560a-411c-8e7a-e879ddd8a342}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\textureLoader">
+    <Filter Include="Header Files\textureMatchup">
       <UniqueIdentifier>{4312c742-52ed-41d8-9147-c6adb0528b5b}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -55,7 +55,10 @@
       <Filter>Header Files\imgui</Filter>
     </ClCompile>
     <ClCompile Include="Special_DX_Headers\WICTextureLoader.cpp">
-      <Filter>Header Files\textureLoader</Filter>
+      <Filter>Header Files\textureMatchup</Filter>
+    </ClCompile>
+    <ClCompile Include="Special_DX_Headers\textureCap\ScreenGrab11.cpp">
+      <Filter>Header Files\textureMatchup</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -120,10 +123,13 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Special_DX_Headers\WICTextureLoader.h">
-      <Filter>Header Files\textureLoader</Filter>
+      <Filter>Header Files\textureMatchup</Filter>
     </ClInclude>
     <ClInclude Include="Renderer\DX11ShaderFunc\ShaderFuncs.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Special_DX_Headers\textureCap\ScreenGrab11.h">
+      <Filter>Header Files\textureMatchup</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
