@@ -30,13 +30,22 @@ struct FFMPEG_VIDEO_WORKER {
 	int ComputePassCount = 1;
 	bool ComputePixelChangeFrequency = false; //means motion happened
 	bool SaveTex = false;
-	
+	bool DontBuildVideo = true;
+
+	bool CompileLazyIntrop = false;
+	bool CompileSoftBodyIntrop = true;
+
 	//dir file path additions
 	std::string imageSplit = "ImageSplit\\";
 	std::string musicSplit = "Music\\";
+	std::string musicName = "%m.mp3";
+	
 	std::string pixFResult = "PixelFrequencyResult\\";
 
 	std::string EndProduct = "EndProduct\\";
+	std::string MovieOutDir = "MovieOutDir\\";
+	std::string MovieOutName = "out.mp4";
+
 	//
 
 	void DeleteVideoCache(std::string* dir) {

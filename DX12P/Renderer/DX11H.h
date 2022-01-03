@@ -23,9 +23,11 @@ const int ZERO_FILE_COUNT = 8;
 #include <AtlBase.h>
 #include <atlconv.h>
 #include <objidl.h>
-#include <gdiplus.h>
-using namespace Gdiplus;
-#pragma comment (lib,"Gdiplus.lib")
+#include <wincodec.h>
+#include <algorithm>
+//#include <gdiplus.h>
+//using namespace Gdiplus;
+//#pragma comment (lib,"Gdiplus.lib")
 
 using namespace Microsoft::WRL;
 
@@ -61,7 +63,9 @@ struct Vertex {
 struct MainDX11Objects {
     bool ClearRTV = true;
 
-    int TargetFrameRate = 24;
+    int CurrentFrameRate = 24;
+
+    int TargetFrameRate = 48;
 
     int SampleSize = 3; //+- 3 frame + 1 current
 
@@ -136,9 +140,9 @@ struct MainDX11Objects {
 
         NewImGUIDat = false;
     }
-    void StopStallAndCheckPic(int frame) {
+    void StopStallAndCheckPic(int frame, ID3D11View* v) {
         if (FFMPEG.ShowOutputPicture) {
-            CopyOutputPicture(frame);
+            CopyOutputPicture(frame, v);
         }
         glfwPollEvents();
         DrawLogic(false);
@@ -150,19 +154,22 @@ struct MainDX11Objects {
         u->GetResource(&r);
         return r;
     }
+    void CleanDir(std::string* Fpath) {
+        if (fs::exists(*Fpath)) {
+            fs::remove_all(*Fpath);
+        }
+        if (fs::is_directory(*Fpath) == false) {
+            fs::create_directory(*Fpath);
+        }
 
-    void CopyOutputPicture(int frame) {
+    }
+    void CopyOutputPicture(int frame, ID3D11View* v) {
 
         ID3D11Resource* rtvR = nullptr;
         dxRenderTargetView->GetResource(&rtvR);
 
         ComPtr<ID3D11Resource> Pic;
-        if (FFMPEG.ComputePixelChangeFrequency) {
-            Pic = GetResourceOfUAVSRV(PixelFMap[FFMPEG.NumToShow][frame]);
-        }
-        else{
-            Pic = GetResourceOfUAVSRV(PerFrameRMap[frame]);
-        }
+        Pic = GetResourceOfUAVSRV(v);
         D3D11_TEXTURE2D_DESC d;
         ComPtr<ID3D11Texture2D> tex;
         Pic.As(&tex);
@@ -338,26 +345,31 @@ struct MainDX11Objects {
 
     }CDataS;
     
+    struct ConstantFrameData {
+        float CurrentFrameRatio;
+        float pad1 = 0.0f;
+        float pad2 = 0.0f;
+        float pad3 = 0.0f;
+    }CDataSFrame;
+
     ID3D11Buffer* Constants;
+
+    ID3D11Buffer* ConstantsFrameDat;
 
     ID3D11ComputeShader* PixelFrequencyCalc;
 
+    ID3D11ComputeShader* FinalComputeLogic1;
 
-    void SaveUAVTexToFile(std::map<int, ID3D11UnorderedAccessView*>* m, int Pass) {
-        std::string Fpath = FFMPEG.filePathNameStore + std::to_string(Pass) + "\\";
-        if (fs::exists(Fpath)) {
-            fs::remove_all(Fpath);
-        }
-        if (fs::is_directory(Fpath) == false) {
-            fs::create_directory(Fpath);
-        }
+    ID3D11ComputeShader* FinalComputeLogicSoftBody1;
+
+    void SaveUAVTexToFile(std::map<int, ID3D11UnorderedAccessView*>* m, std::string* Fpath) {
 
         //start file saving
-        for (auto x : *m) {
+        for (auto& x : *m) {
             std::string TrailZeros = "";
             addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(x.first).length()));
             TrailZeros += std::to_string(x.first) + ".png";
-            std::string FName = Fpath + TrailZeros;
+            std::string FName = (*Fpath) + TrailZeros;
 
             CA2W ca2w(FName.c_str());
             LPWSTR ws = LPWSTR(ca2w);
@@ -365,12 +377,15 @@ struct MainDX11Objects {
             ID3D11Resource* r;
             r = GetResourceOfUAVSRV(x.second);
 
-            SaveWICTextureToFile(dxDeviceContext.Get(), r, ImageFormatPNG, ws, &ImageFormatPNG, nullptr, false);
+            ThrowFailed(SaveWICTextureToFile(dxDeviceContext.Get(), r, GUID_ContainerFormatPng, ws));
             SafeRelease(r);
         }
+
     }
 
     void CreatePixelFrequencyCalcShader() {
+        if (PixelFrequencyCalc != nullptr) SafeRelease(PixelFrequencyCalc);
+
         const std::string s = 
             "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
             
@@ -410,27 +425,129 @@ struct MainDX11Objects {
             "OutT[IN.dispatchThreadID.xy]=OutT[IN.dispatchThreadID.xy]/SampleSize;\n"
             "\n"
             "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "}\n"
-            
-            
+            "}\n"            
             ;
 
         PixelFrequencyCalc = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
+
+    }
+    void CreateFinalComputeLogicSoftBody1Shader() {
+        if (FinalComputeLogicSoftBody1 != nullptr) SafeRelease(FinalComputeLogicSoftBody1);
+
+        const std::string s =
+            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
+
+            "cbuffer ConstDataFrame : register(b0){\n"
+            "float FrameRatio;\n"
+            "}\n"
+
+            "RWTexture2D<float4> OutT : register(u0);\n"
+            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
+            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
+            "Texture2D texFZero[SampleSize] : register(t" + std::to_string(SampleSize * 2 + 1) + ");\n"
+
+            "struct ComputeShaderInput\n"
+            "{\n"
+            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
+            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
+            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
+            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
+            "};\n"
+
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_main(ComputeShaderInput IN){\n"
+            //uniform branch is cheap - im not worried here
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "float Fr = FrameRatio;"
+            "\n"
+            "OutT[texC] = tex[0].Load(int3(texC,0))*Fr+tex[2].Load(int3(texC,0))*(1-Fr); \n"
+            "\n"
+            "\n"
+            "}\n"
+            ;
+
+        FinalComputeLogicSoftBody1 = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
+    }
+    void CreateFinalComputeLogic1Shader() {
+        if (FinalComputeLogic1 != nullptr) SafeRelease(FinalComputeLogic1);
+
+        const std::string s =
+            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
+
+            "cbuffer ConstDataFrame : register(b0){\n"
+            "float FrameRatio;\n"
+            "}\n"
+
+            "RWTexture2D<float4> OutT : register(u0);\n"
+            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
+            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
+            
+            "struct ComputeShaderInput\n"
+            "{\n"
+            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
+            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
+            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
+            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
+            "};\n"
+
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_main(ComputeShaderInput IN){\n"
+            //uniform branch is cheap - im not worried here
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "float Fr = FrameRatio;"
+            "\n"
+            "OutT[texC] = tex[0].Load(int3(texC,0))*Fr+tex[2].Load(int3(texC,0))*(1-Fr); \n"
+            "\n"
+            "\n"
+            "}\n"
+            ;
+
+        FinalComputeLogic1 = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
+    }
+
+    void RunSoftBodyComputePass(ID3D11UnorderedAccessView* uav, std::map<int, std::vector<ID3D11ShaderResourceView*>>* srv, bool HasSetVar = false) {
+
+        dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uav, 0);
+
+        if (HasSetVar = false) {
+            dxDeviceContext->CSSetShader(FinalComputeLogicSoftBody1, 0, 0);
+
+            for (int i = 0; i < srv->size(); i++) {
+                dxDeviceContext->CSSetShaderResources((*srv)[i].size() * i, (*srv)[i].size(), (*srv)[i].data());
+            }
+        }
+
+        dxDeviceContext->CSSetConstantBuffers(0, 1, &ConstantsFrameDat);
+
+        dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
+
+        srv->clear();
+
+        ID3D11UnorderedAccessView* uavt = nullptr;
+
+        dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uavt, 0);
+    }
+    void RunImageComputePass(ID3D11UnorderedAccessView* uav, std::map<int,std::vector<ID3D11ShaderResourceView*>>* srv, bool HasSetVar = false) {
+        
+        dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uav, 0);
+        
+        if (HasSetVar == false) {
+            dxDeviceContext->CSSetShader(FinalComputeLogic1, 0, 0);
+
+            for (int i = 0; i < srv->size(); i++) {
+                dxDeviceContext->CSSetShaderResources((*srv)[i].size() * i, (*srv)[i].size(), (*srv)[i].data());
+            }
+        }
+
+        dxDeviceContext->CSSetConstantBuffers(0, 1, &ConstantsFrameDat);
+
+        dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
+
+        srv->clear();
+
+        ID3D11UnorderedAccessView* uavt = nullptr;
+
+        dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uavt, 0);
 
     }
     void RunPixelFrequency(ID3D11UnorderedAccessView* uav, std::vector<ID3D11ShaderResourceView*>* srv) {
@@ -445,6 +562,11 @@ struct MainDX11Objects {
         dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
 
         srv->clear();
+
+        ID3D11UnorderedAccessView* uavt = nullptr;
+
+        dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uavt, 0);
+
     }
 
     void CreateConstantBuf() {
@@ -455,10 +577,21 @@ struct MainDX11Objects {
         bufDesc.ByteWidth = sizeof(ConstantsDataStruct);
         bufDesc.StructureByteStride = sizeof(UINT);
         dxDevice->CreateBuffer(&bufDesc, nullptr, &Constants);
+
+        bufDesc.ByteWidth = sizeof(ConstantFrameData);
+
+        dxDevice->CreateBuffer(&bufDesc, nullptr, &ConstantsFrameDat);
+
+
     }
     void UpdateConstantBuf() {
         dxDeviceContext->UpdateSubresource(Constants, 0, nullptr, &CDataS, 0, 0);
     }
+    void UpdateFrameConstantBuf(float dat) { // how close from frame 0.0f-1.0f [[1] is before--[0] is after], and 1.001f-2.0f[[0] is before-- [2] is after] 
+        CDataSFrame.CurrentFrameRatio = dat;
+        dxDeviceContext->UpdateSubresource(ConstantsFrameDat, 0, nullptr, &CDataSFrame, 0, 0);
+    }
+
     void ResizeWindowAndViewport(float NewWidth, float NewHeight, DXGI_FORMAT format) {
         glfwSetWindowSize(window, NewWidth, NewHeight);
         Width = NewWidth;
@@ -472,6 +605,7 @@ struct MainDX11Objects {
         srv->GetResource(&r);
         ComPtr<ID3D11Texture2D> tex;
         r.As(&tex);
+
 
         tex->GetDesc(&d);
         
@@ -495,10 +629,19 @@ struct MainDX11Objects {
         UpdateConstantBuf();
 
         CreatePixelFrequencyCalcShader();
+        
+        if(FFMPEG.CompileLazyIntrop)
+            CreateFinalComputeLogic1Shader();
+        else if (FFMPEG.CompileSoftBodyIntrop) {
+            CreateFinalComputeLogicSoftBody1Shader();
+        }
+        else {
+            CreateFinalComputeLogic1Shader();
+        }
 
     }
 
-    bool AddMainResourceToMapFromFile(std::string* psp, int val) {
+    bool AddMainResourceToMapFromFile(std::string* psp, int val, std::map<int, ID3D11ShaderResourceView*>* PerFrameRMap) {
 
         std::string TrailZeros = "";
         addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(val).length()));
@@ -506,7 +649,7 @@ struct MainDX11Objects {
 
         std::string workS = *psp + TrailZeros;
         if (fs::exists(workS)) {
-            GetTextureFromPathIntoMap(&workS, val);
+            GetTextureFromPathIntoMap(&workS, val, PerFrameRMap);
 
             val += 1;
             TrailZeros = "";
@@ -518,7 +661,286 @@ struct MainDX11Objects {
         return false;
     }
 
+    bool CheckForMusic(std::string* fsM) {
+                
+        return fs::exists(*fsM + FFMPEG.musicName);
+
+    }
+
+    int GetSplitPicCount(std::string* fsS) {
+        int i = 0;
+        for (auto& p : fs::directory_iterator(*fsS)) {
+            if(p.path().string().find(".png") != std::string::npos)
+            i++;
+        }
+        return i;
+    }
+
+    void RunFinalImageCreationPassFrame(int i, std::map<int, std::map<int, ID3D11ShaderResourceView*>>* srvM, int& SplitPicCount, int& RealFrameCount, float& fRat) { //0 is reg, remember
+
+        //[0] = current [1] = before [2] = after
+
+        int total = SampleSize * 2 + 1;
+        int cur = i;
+        int bottom = i - SampleSize;
+        int top = i + SampleSize;
+        int filled = 1;
+
+        std::map<int, std::vector<ID3D11ShaderResourceView*>> srv; //the srvs + 1 for main image, 0 is reg, rest are in order map stuff from folders
+        for (int x = 0; x < srvM->size(); x++) {
+            srv[x].resize(total);
+        }
+        for (int x = 0; x < srvM->size(); x++) {
+            srv[x][0] = (*srvM)[x][cur];
+        }
+        if (bottom < 1) {
+            int SetBottom = cur;
+            for (int y = SampleSize; y > -SampleSize; y--) {
+                if (SetBottom - y > 0) {
+                    bottom = cur - y;
+                    top = cur + (SampleSize - y) + SampleSize;
+                    y = -SampleSize;
+                }
+            }
+        }
+        else if ((*srvM)[0].count(top) == 0) { // unbound data, so I need to map count - unless I pre pass max size - won't run for pre cache, so only checks in CPU cache around 7-10 items, so this is very fast despite looking to have a poor worst case' worst case will never be reached
+            int SetTop = cur;
+            for (int y = SampleSize; y > -SampleSize; y--) {
+                if ((*srvM)[0].count(SetTop + y) > 0) {
+                    top = cur + y;
+                    bottom = cur - (SampleSize - y) - SampleSize;
+                    y = -SampleSize;
+                }
+            }
+        }
+
+
+        std::map<int,std::map<int, ID3D11ShaderResourceView*>> InUseData; //remove not needed data
+        
+        for (auto& x : (*srvM)) {
+            InUseData[x.first][cur] = x.second[cur];
+        }
+
+        int Prefilled = filled;
+
+        for (auto& y : (*srvM)) {
+            filled = Prefilled;
+            for (int x = bottom; x < top + 1; x++) {
+                if (x != cur) {
+
+                    InUseData[y.first][x] = y.second[x];
+
+                    srv[y.first][filled] = y.second[x];
+                    filled += 1;
+                }
+            }
+        }
+     //   if (!FFMPEG.CacheVideoImages) {
+            //clean not used data for non cached work
+        
+        for (auto& y : (*srvM)) {
+            std::vector<int> ToErase;
+            for (auto& x : y.second) {
+                if (InUseData[y.first].count(x.first) == 0) {
+                    ID3D11Resource* r = GetResourceOfUAVSRV(x.second);
+                    SafeRelease(r);
+                    SafeRelease(x.second);
+                    ToErase.push_back(x.first);
+                }
+            }
+            for (auto& x : ToErase) {
+                y.second.erase(x); //if I erase in iterator it crashes due to refrencing a non existant object in a logical loop, so I cache all "to delete" object
+            }
+        }
+
+    //    }
+        /*
+        *SplitPicCount/CurrentFrameRate = seconds
+        
+        *SplitPicCount/TargetFrameRate = 
+
+        120 = total frames
+        90/30 = frame rate, goal is to make 90 -> 30 same time
+
+        120/30 = 4 //oldseconds good
+
+        120/90 = 1.333 //target seconds wrong
+
+        4/1.333 * current frames = new frame count
+
+        360/90 = 4 seconds
+        
+        
+        
+        */
+        int CapVal = std::floor((float(i) + 1) * fRat);
+        bool HasSetVar = false;
+        for (int x = std::floor(float(i) * fRat); x < CapVal; x++) { //new frames
+
+            UpdateFrameConstantBuf((CapVal + 1 - x) / fRat - 1); // 0.0-1.0f is [1]-> [0]    1.01f-2.0f [0]->[2]
+            //pass 1
+            MakeEmptyUAVfromSRVIntoMap(&PixelFMap[0], (*srvM)[0][i], x);
+
+            if (FFMPEG.CompileLazyIntrop){
+                RunImageComputePass(PixelFMap[0][x], &srv, HasSetVar);
+            }
+            else if (FFMPEG.CompileSoftBodyIntrop) {
+                RunSoftBodyComputePass(PixelFMap[0][x], &srv, HasSetVar);
+            }
+            else {
+                RunImageComputePass(PixelFMap[0][x], &srv, HasSetVar);
+            }
+            HasSetVar = true;
+            //
+
+
+            StopStallAndCheckPic(x, PixelFMap[0][x]);
+        }
+        for (int iter = 0; iter < PixelFMap.size(); iter++) {
+            std::string FPath = FFMPEG.filePathNameStore + FFMPEG.EndProduct;
+
+            if (i == 1)CleanDir(&FPath);
+
+            SaveUAVTexToFile(&PixelFMap[iter], &FPath);
+            
+            CleanCacheResourceMap(&PixelFMap[iter]);
+        }
+
+
+        i += 1;
+
+    }
+
+    void RunFinalImageCreationPass(std::vector<int>* validFolder, std::string* fsS, int& SplitPicCount, int& RealFrameCount) {
+        std::string FinalImageSplitF = FFMPEG.filePathNameStore + FFMPEG.EndProduct;
+        CleanDir(&FinalImageSplitF);
+
+        int OldSampleSize = SampleSize;
+        SampleSize = 1; // 1 beofre and 1 infront, and current in middle - 2 if start or end, so start and end is messy looks
+
+        int i = 1;
+        int LastTmp = 0;
+        int tmp = i;
+         //pack all data into this map
+        std::map<int, std::map<int, ID3D11ShaderResourceView*>> srvM;
+
+        std::map<int, std::string> fsSU;
+        fsSU[0] = *fsS;
+
+        for (int& x : *validFolder) {
+            fsSU[x + 1] = FFMPEG.filePathNameStore + std::to_string(x) + "\\";
+        }
+
+        while (tmp < SampleSize * 2 + 2) {
+            for (int& x : *validFolder) {
+                AddMainResourceToMapFromFile(&fsSU[x + 1], tmp, &srvM[x + 1]);
+            }
+            AddMainResourceToMapFromFile(&fsSU[0], tmp, &srvM[0]); //for frame 1
+            tmp++;
+        }
+
+        CreateConstantBuf();
+        MakeShadersAndConstantsData(srvM[0][1]);
+
+        PixelFMap.resize(1);
+
+        float FrameRatio = RealFrameCount / SplitPicCount;
+
+        RunFinalImageCreationPassFrame(i, &srvM, SplitPicCount, RealFrameCount, FrameRatio);
+
+        i += 1;
+        bool h = false;
+        while (i != tmp) {
+            if (i > SampleSize + 1) {
+                for (auto x : srvM) {
+                    h = AddMainResourceToMapFromFile(&fsSU[x.first], tmp, &srvM[x.first]);
+                }
+            }
+            if (h) {
+                tmp += 1;
+            }
+            h = false;
+
+            RunFinalImageCreationPassFrame(i, &srvM, SplitPicCount, RealFrameCount, FrameRatio);
+
+            i += 1;
+        }
+
+
+        for (auto& x : srvM) {
+            CleanCacheResourceMap(&x.second);
+        }
+
+        srvM.clear();
+        
+        CleanCacheResourceMap(&PerFrameRMap);
+
+        //BuildVideo
+        std::string MovieOutDirL = FFMPEG.filePathNameStore + FFMPEG.MovieOutDir;
+        CleanDir(&MovieOutDirL);
+
+        if (!FFMPEG.DontBuildVideo) {
+            std::string qs = R"(")";
+            std::string BuildVideo = qs + qs + FFMPEG.filePathNameffmpeg + qs + " -framerate " + std::to_string(TargetFrameRate) + " -i " + qs + FFMPEG.filePathNameStore + FFMPEG.EndProduct + "\%" + std::to_string(ZERO_FILE_COUNT) + "d.png" + qs + " -i " + qs + FFMPEG.filePathNameStore + FFMPEG.musicSplit + FFMPEG.musicName + qs + " -c:a copy -shortest -c:v libx264 -pix_fmt yuv420p " + qs + MovieOutDirL + FFMPEG.MovieOutName + qs+qs;
+
+            system(BuildVideo.c_str());
+        }
+        //
+
+        SampleSize = OldSampleSize;
+        //TODO: use music and new folder with data to construct video with FFMPEG;
+    }
+
+    bool VideoCreationPass() {
+        std::string fsS = FFMPEG.filePathNameStore + FFMPEG.imageSplit;
+        std::string fsM = FFMPEG.filePathNameStore + FFMPEG.musicSplit;
+
+        bool IsMusic = CheckForMusic(&fsM);
+
+        std::vector<int> validFolder;
+        validFolder.resize(FFMPEG.ComputePassCount);
+        std::fill(validFolder.begin(), validFolder.end(), -1);
+
+        int SplitPicCount = GetSplitPicCount(&fsS);
+
+        for (int i = 0; i < validFolder.size(); i++) {
+            std::string FPath = FFMPEG.filePathNameStore + std::to_string(i) + "\\";
+            if (GetSplitPicCount(&FPath) == SplitPicCount) validFolder[i] = i;
+        }
+        for (int i = 0; i < validFolder.size(); i++) {
+            if (validFolder[i] == -1) {
+                validFolder.erase(validFolder.begin()+i);
+                i--;
+            }
+        }
+
+        validFolder.clear();
+
+        if (validFolder.size() != FFMPEG.ComputePassCount && !FFMPEG.CompileLazyIntrop) return false; //end early due to issue with files
+
+        int RealFrameCount = std::floor((float(SplitPicCount) / float(CurrentFrameRate)) / (float(SplitPicCount) / float(TargetFrameRate))) * SplitPicCount;
+
+        RunFinalImageCreationPass(&validFolder, &fsS, SplitPicCount, RealFrameCount);
+
+
+        //BUILD MOVIE NOW
+
+        return true;
+    }
+
+    void CheckIfINeedToSplitAgain() {
+        std::string FPath = FFMPEG.filePathNameStore + FFMPEG.imageSplit;
+        if (fs::is_directory(FFMPEG.filePathNameStore) && !std::filesystem::is_empty(FPath)) {
+
+        }
+        else {
+            FFMPEG.SplitVideo(&FFMPEG.filePathNameStore, &FFMPEG.filePathName, &FFMPEG.filePathNameffmpeg);
+        }
+    }
+
     void ComputePassLogicFrame(int i) {
+
+        
         int total = SampleSize * 2 + 1;
         int cur = i;
         int bottom = i - SampleSize;
@@ -568,16 +990,16 @@ struct MainDX11Objects {
         if (!FFMPEG.CacheVideoImages) {
             //clean not used data for non cached work
             std::vector<int> ToErase;
-            for (auto i : PerFrameRMap) {
-                if (InUseData.count(i.first) == 0) {
-                    ID3D11Resource* r = GetResourceOfUAVSRV(i.second);
+            for (auto& x : PerFrameRMap) {
+                if (InUseData.count(x.first) == 0) {
+                    ID3D11Resource* r = GetResourceOfUAVSRV(x.second);
                     SafeRelease(r);
-                    SafeRelease(i.second);
-                    ToErase.push_back(i.first);
+                    SafeRelease(x.second);
+                    ToErase.push_back(x.first);
                 }
             }
-            for (auto i : ToErase) {
-                PerFrameRMap.erase(i); //if I erase in iterator it crashes due to refrencing a non existant object in a logical loop, so I cache all "to delete" object
+            for (auto& x : ToErase) {
+                PerFrameRMap.erase(x); //if I erase in iterator it crashes due to refrencing a non existant object in a logical loop, so I cache all "to delete" object
             }
 
         }
@@ -590,13 +1012,20 @@ struct MainDX11Objects {
             RunPixelFrequency(PixelFMap[0][i], &srv);
         }
         //
-
-        StopStallAndCheckPic(i);
+        if (FFMPEG.ComputePixelChangeFrequency) {
+            StopStallAndCheckPic(i, PixelFMap[FFMPEG.NumToShow][i]);
+        }
+        else{
+            StopStallAndCheckPic(i, PerFrameRMap[i]);
+        }
 
         for (int iter = 0; iter < PixelFMap.size(); iter++) {
             if (FFMPEG.SaveTex) {
-                SaveUAVTexToFile(&PixelFMap[iter], iter);
-
+                std::string FPath = FFMPEG.filePathNameStore + std::to_string(iter) + "\\";
+                
+                if(i == 1)CleanDir(&FPath);
+                
+                SaveUAVTexToFile(&PixelFMap[iter], &FPath);
             }
             CleanCacheResourceMap(&PixelFMap[iter]);
         }
@@ -606,7 +1035,7 @@ struct MainDX11Objects {
     }
 
     void CleanCacheResourceMap(std::map<int, ID3D11ShaderResourceView*>* m) {
-        for (auto i : (*m) ) {
+        for (auto& i : (*m) ) {
             ID3D11Resource* TexO = nullptr;
             i.second->GetResource(&TexO);
             SafeRelease(i.second);
@@ -615,7 +1044,7 @@ struct MainDX11Objects {
         m->clear();
     }
     void CleanCacheResourceMap(std::map<int, ID3D11UnorderedAccessView*>* m) {
-        for (auto i : (*m)) {
+        for (auto& i : (*m)) {
             ID3D11Resource* TexO = nullptr;
             i.second->GetResource(&TexO);
             SafeRelease(i.second);
@@ -625,17 +1054,19 @@ struct MainDX11Objects {
     }
 
     void StartComputePass(){
+        CheckIfINeedToSplitAgain();
+
         std::string psp = FFMPEG.filePathNameStore + FFMPEG.imageSplit;
 
         if (FFMPEG.CacheVideoImages) {
             int val = 1;
-            while (AddMainResourceToMapFromFile(&psp, val)) {
+            while (AddMainResourceToMapFromFile(&psp, val, &PerFrameRMap)) {
                 val += 1;
             }
         }
         else {
             int val = 1;
-            AddMainResourceToMapFromFile(&psp, val);
+            AddMainResourceToMapFromFile(&psp, val, &PerFrameRMap);
         }
         
         CreateConstantBuf();
@@ -655,7 +1086,7 @@ struct MainDX11Objects {
             int LastTmp = 0;
             int tmp = i;
             while (tmp < SampleSize * 2 + 2) {
-                AddMainResourceToMapFromFile(&psp, tmp); //for frame 1
+                AddMainResourceToMapFromFile(&psp, tmp, &PerFrameRMap); //for frame 1
                 tmp++;
             }
 
@@ -664,7 +1095,7 @@ struct MainDX11Objects {
             bool h = false;
             while (i!=tmp) {
                 if (i > SampleSize + 1) {
-                    h = AddMainResourceToMapFromFile(&psp, tmp);
+                    h = AddMainResourceToMapFromFile(&psp, tmp, &PerFrameRMap);
                 }
                 if (h) {
                     tmp += 1;
@@ -677,8 +1108,8 @@ struct MainDX11Objects {
             }
         }
         
-        for (int i = 0; i < PixelFMap.size();i++) {
-            CleanCacheResourceMap(&PixelFMap[i]);
+        for (int y = 0; y < PixelFMap.size();y++) {
+            CleanCacheResourceMap(&PixelFMap[y]);
         }
         CleanCacheResourceMap(&PerFrameRMap);
         SafeRelease(Constants);
@@ -730,7 +1161,7 @@ struct MainDX11Objects {
         return uav;
     }
 
-    void GetTextureFromPathIntoMap(std::string* path, int frame) {
+    void GetTextureFromPathIntoMap(std::string* path, int frame, std::map<int, ID3D11ShaderResourceView*>* m) {
         std::pair<ID3D11ShaderResourceView*, HRESULT> srv = GetTextureFromPath(path);
         /*if (PerFrameRMap.count(frame) > 0) {
             ID3D11Resource* TexO = nullptr;
@@ -740,7 +1171,7 @@ struct MainDX11Objects {
         */
 
         if (srv.second == S_OK) {
-            PerFrameRMap[frame] = srv.first;
+            (*m)[frame] = srv.first;
         }
         else {
 
@@ -818,6 +1249,7 @@ struct MainDX11Objects {
     
    
     void RendererStartUpLogic() {
+        
         NewDX11Object();
 
     }

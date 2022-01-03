@@ -423,10 +423,11 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				ImGui::Checkbox("Cache Video Images\n", &FFMPEG.CacheVideoImages);
 				ImGui::SameLine();
 				ImGui::HelpMarker("caches split images\nExpensive on ram but should be faster");
-
+				/*
 				ImGui::Checkbox("Show Output During Work\n", &FFMPEG.ShowOutputPicture);
 				ImGui::SameLine();
 				ImGui::HelpMarker("ONLY shows furthest up check box\n(priority system)");
+				*/
 
 				ImGui::InputInt("ComputeOutput to show", &FFMPEG.NumToShow);
 				ImGui::SameLine();
@@ -452,16 +453,27 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				ImGui::Separator();
 				ImGui::Separator();
 				
-				ImGui::InputInt("Enter Target Output FPS", &DXM.TargetFrameRate);
+				ImGui::InputInt("Enter Current Output FPS", &DXM.CurrentFrameRate);
 				ImGui::SameLine();
 				ImGui::HelpMarker("The Frame rate the program assumes the original video as\n\nFind the frame rate (round it) in\nRight_Click_File->Properties->Details->Frame_Rate");
 
 				ImGui::InputInt("Enter Target Output FPS", &DXM.TargetFrameRate);
 				
 				if (ImGui::Button("Compile Video")) {
-					//
+					if (DXM.VideoCreationPass() == false) {
+						std::cout << "failed compiling";
+					}
 				}
+				ImGui::Checkbox("Don't Build Video (Debug)", &FFMPEG.DontBuildVideo);
 
+				ImGui::HelpMarker("Higher check box has more priority");
+
+				ImGui::Checkbox("Lazy Video Frame Interpolation", &FFMPEG.CompileLazyIntrop);
+				ImGui::Checkbox("Soft Body Video Frame Interpolation", &FFMPEG.CompileSoftBodyIntrop);
+
+				ImGui::SameLine();
+				
+				
 
 				//TODO sampleSize change input - must be less than 20
 //TODO: check box for compute passes to-do
