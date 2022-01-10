@@ -408,7 +408,7 @@ struct ShaderString {
             );
         //TODO, use distance and rate of change to interpolate in between for new frames
     }
-    std::string CreateRateOfChangeAndDistShader(int BLOCK_SIZE, int SampleSize) {
+    std::string CreateRateOfChangeAndDistShader(int BLOCK_SIZE, int SampleSize) { //TODO: test if function calls are slower - I'm really - REALLY worried about unneeded copies - since it would do ***hundreds*** which could hurt render time by miles - I highly doubt the compiler could auto optimise this... since its runtime dependent too... but I should check and keep this in mind - keeps code cleaner
         return ( //TODO: add goal from email - for now just remember it gets layer of imaging
             "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
             //The idea of this compute is to get rate of change for intrpolation of pixels mid frame so I know how to interpolate colors
@@ -478,7 +478,7 @@ struct ShaderString {
             "}\n"            
             */
 
-            "}\n" //TODO: for now I just store position of where the data for pixel prob- comes from, not distance.
+            "}\n" //TODO: make it find shortest dist option - slower but more accurate interp
             //The goal of this shader is to fill my distance UAV which I stored in an average value by looking at every single block in a dispatch overall in a loop, for average colors in the tile being within range. if it is  within range I know the colors prob- came from that point meaning I can interpolate from those pixels. smaller range == more accuracy, but I'm trying 0.1f flat for now
             
             
@@ -559,6 +559,93 @@ struct ShaderString {
             "\n"
             "\n"
             "}\n"
+
+
+            "int LogicA(ComputeShaderInput IN){"
+
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "float3 AverageP = OutRange[texC];"
+            "float3 minAve = AverageP*MinR;\n"
+            "float3 maxAve = AverageP*MaxR;\n"
+            //    "uint2 groupIndex = IN.groupIndex;\n" //so I don't conflict in T group when I read averages from UAV with each read
+            "uint2 groupID = IN.groupID.xy;\n"
+            "uint2 start = uint2(groupID.x*BLOCK_SIZE,groupID.y*BLOCK_SIZE);\n"
+            "float2 Dist = float2(DepthX+1,DepthY+1);"
+
+            "for(int x = start+BLOCK_SIZE; x < DepthX; x+=BLOCK_SIZE){\n" //check greater than start
+
+            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
+
+            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "for(int y = start-BLOCK_SIZE; y > 0; y-=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
+
+            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "}\n"
+
+            "for(int x = start-BLOCK_SIZE; x > 0; x-=BLOCK_SIZE){\n" //check greater than start
+
+            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
+
+            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "for(int y = start-BLOCK_SIZE; y > 0; y-=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
+
+            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "}"
+            "if(all(Dist == float2(DepthX + 1, DepthY + 1)))"
+            "OutRange[texC] = float4(0.0f,0.0f,0.0f,1.0f);"
+            "else OutRange[texC] = float4(Dist.x,Dist.y,0.0f,1.0f);"
+
+            "return 0;"
+            "}"
+
+
+
+
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_DistA(ComputeShaderInput IN){\n"
+
+            "LogicA(IN);"
+
+
+            "\n"
+            "\n"
+            "\n"
+            "}\n"
+                
+            ""
+
             );
     }
 }SStringC;

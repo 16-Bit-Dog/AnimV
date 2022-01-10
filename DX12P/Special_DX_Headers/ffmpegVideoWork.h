@@ -30,6 +30,7 @@ struct FFMPEG_VIDEO_WORKER {
 	int ComputePassCount = 3;
 	bool ComputePixelChangeFrequency = false; //means motion happened
 	bool ComputeRateOfChange = true; //has 3
+	bool ComputeDistAccurate = true;
 
 	bool SaveTex = true;
 	bool DontBuildVideo = false;

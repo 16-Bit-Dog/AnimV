@@ -358,6 +358,7 @@ struct MainDX11Objects {
     ID3D11ComputeShader* PixelFrequencyCalc;
     ID3D11ComputeShader* ComputeRateOfChange;
     ID3D11ComputeShader* ComputeDistance;
+    ID3D11ComputeShader* ComputeDistanceAccurate;
 
     ID3D11ComputeShader* FinalComputeLogic1;
     ID3D11ComputeShader* FinalComputeLogicSoftBody1;
@@ -407,12 +408,12 @@ struct MainDX11Objects {
         
         if (ComputeRateOfChange != nullptr) SafeRelease(ComputeRateOfChange);
         if (ComputeDistance != nullptr) SafeRelease(ComputeDistance);
-
+        if (ComputeDistanceAccurate != nullptr) SafeRelease(ComputeDistanceAccurate);
         const std::string s = SStringC.CreateRateOfChangeAndDistShader(BLOCK_SIZE, SampleSize);
 
         ComputeRateOfChange = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
         ComputeDistance = LoadShader<ID3D11ComputeShader>(&s, "CS_Dist", "latest", dxDevice.Get());
-
+        ComputeDistanceAccurate = LoadShader<ID3D11ComputeShader> (&s, "CS_DistA", "latest", dxDevice.Get());
     }
     void CreateFinalComputeLogicSoftBody1Shader() {
         if (FinalComputeLogicSoftBody1 != nullptr) SafeRelease(FinalComputeLogicSoftBody1);
@@ -506,9 +507,12 @@ struct MainDX11Objects {
         dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
 
 
-
-        dxDeviceContext->CSSetShader(ComputeDistance, 0, 0); //dist calc
-        
+        if (FFMPEG.ComputeDistAccurate == false) {
+            dxDeviceContext->CSSetShader(ComputeDistance, 0, 0); //dist calc
+        }
+        else{
+            dxDeviceContext->CSSetShader(ComputeDistanceAccurate, 0, 0); //dist calc
+        }
         dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
 
 
