@@ -1,12 +1,11 @@
 #pragma once
 //finally I will try to use com_ptr's
 
-//TODO: fix memory leak I have when cleaning images from map?!?
-//TODO: add live change programming and "show output" - call it "pass1""pass2" as folders, and it pulls from these to compile result video
-//also have "display video <-- split video has same formating for name as ffmpeg"
+//TODO use RGB without A maybe
 
 #define WIN32_LEAN_AND_MEAN
 const int ZERO_FILE_COUNT = 8;
+const std::string fNameEnd = "BMP";
 // DirectX 11 & windows specific headers.
 #include <Windows.h>
 #include <dwmapi.h>
@@ -63,11 +62,11 @@ struct Vertex {
 struct MainDX11Objects {
     bool ClearRTV = true;
 
-    int CurrentFrameRate = 24;
+    int CurrentFrameRate = 23;
 
-    int TargetFrameRate = 48;
+    int TargetFrameRate = 69;
 
-    int SampleSize = 3; //+- 3 frame + 1 current
+    int SampleSize = 1; //+- 3 frame + 1 current - TODO: make this SampleCount
 
     bool UseWarpDev = false;
 
@@ -357,10 +356,12 @@ struct MainDX11Objects {
     ID3D11Buffer* ConstantsFrameDat;
 
     ID3D11ComputeShader* PixelFrequencyCalc;
+    ID3D11ComputeShader* ComputeRateOfChange;
+    ID3D11ComputeShader* ComputeDistance;
 
     ID3D11ComputeShader* FinalComputeLogic1;
-
     ID3D11ComputeShader* FinalComputeLogicSoftBody1;
+
 
     void SaveUAVTexToFile(std::map<int, ID3D11UnorderedAccessView*>* m, std::string* Fpath) {
 
@@ -368,17 +369,28 @@ struct MainDX11Objects {
         for (auto& x : *m) {
             std::string TrailZeros = "";
             addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(x.first).length()));
-            TrailZeros += std::to_string(x.first) + ".png";
+            TrailZeros += std::to_string(x.first) + "."+ fNameEnd;
             std::string FName = (*Fpath) + TrailZeros;
 
             CA2W ca2w(FName.c_str());
             LPWSTR ws = LPWSTR(ca2w);
 
-            ID3D11Resource* r;
-            r = GetResourceOfUAVSRV(x.second);
+            
+            ComPtr<ID3D11Resource> Pic;
+            Pic = GetResourceOfUAVSRV(x.second);
+            D3D11_TEXTURE2D_DESC d;
+            ComPtr<ID3D11Texture2D> tex;
+            Pic.As(&tex);
 
-            ThrowFailed(SaveWICTextureToFile(dxDeviceContext.Get(), r, GUID_ContainerFormatPng, ws));
-            SafeRelease(r);
+            tex->GetDesc(&d);
+
+            if(d.Format != DXGI_FORMAT_R16G16B16A16_FLOAT) ThrowFailed(SaveWICTextureToFile(dxDeviceContext.Get(), Pic.Get(), GUID_ContainerFormatBmp, ws));
+            
+            else ThrowFailed(SaveWICTextureToFile(dxDeviceContext.Get(), Pic.Get(), GUID_ContainerFormatWmp, ws, &GUID_WICPixelFormat64bppRGBAHalf/*, &GUID_WICPixelFormat64bppRGBAHalf*/)); //format name is wrong :smile:
+
+
+            SafeRelease(Pic);
+
         }
 
     }
@@ -386,121 +398,34 @@ struct MainDX11Objects {
     void CreatePixelFrequencyCalcShader() {
         if (PixelFrequencyCalc != nullptr) SafeRelease(PixelFrequencyCalc);
 
-        const std::string s = 
-            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
-            
-            "cbuffer ConstData : register(b0){\n"
-            "int DepthSizeX;\n"
-            "int DepthSizeY;\n"
-            "uint pad4;\n"
-            "uint pad1;\n"
-            "uint3 numTG;\n"
-            "uint pad2;\n"
-            "uint3 TG;\n"
-            "uint pad3;\n"
-            "}\n"
-
-            "RWTexture2D<float4> OutT : register(u0);\n"
-            "#define SampleSize "+ std::to_string(SampleSize*2+1)+"\n"
-            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
-
-
-            "struct ComputeShaderInput\n"
-            "{\n"
-            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
-            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
-            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
-            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
-            "};\n"
-
-            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
-            "void CS_main(ComputeShaderInput IN){\n"
-            "int2 texCoord = IN.dispatchThreadID.xy;"
-            "OutT[IN.dispatchThreadID.xy] = tex[0].Load(int3(texCoord,0));"
-            "[unroll]"
-            "for(int i = 1; i < SampleSize; i++){\n"
-            "OutT[IN.dispatchThreadID.xy] -= tex[i].Load(int3(texCoord,0))/SampleSize;\n"
-            "\n"
-            "}\n"
-            "OutT[IN.dispatchThreadID.xy]=OutT[IN.dispatchThreadID.xy]/SampleSize;\n"
-            "\n"
-            "\n"
-            "}\n"            
-            ;
+        const std::string s = SStringC.CreatePixelFrequencyCalcShader(BLOCK_SIZE, SampleSize);
 
         PixelFrequencyCalc = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
+
+    }
+    void CreateComputeRateOfChangeShader() {
+        
+        if (ComputeRateOfChange != nullptr) SafeRelease(ComputeRateOfChange);
+        if (ComputeDistance != nullptr) SafeRelease(ComputeDistance);
+
+        const std::string s = SStringC.CreateRateOfChangeAndDistShader(BLOCK_SIZE, SampleSize);
+
+        ComputeRateOfChange = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
+        ComputeDistance = LoadShader<ID3D11ComputeShader>(&s, "CS_Dist", "latest", dxDevice.Get());
 
     }
     void CreateFinalComputeLogicSoftBody1Shader() {
         if (FinalComputeLogicSoftBody1 != nullptr) SafeRelease(FinalComputeLogicSoftBody1);
 
-        const std::string s =
-            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
+        const std::string s = SStringC.FinalComputeLogicSoftBody1(BLOCK_SIZE, SampleSize);
 
-            "cbuffer ConstDataFrame : register(b0){\n"
-            "float FrameRatio;\n"
-            "}\n"
-
-            "RWTexture2D<float4> OutT : register(u0);\n"
-            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
-            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
-            "Texture2D texFZero[SampleSize] : register(t" + std::to_string(SampleSize * 2 + 1) + ");\n"
-
-            "struct ComputeShaderInput\n"
-            "{\n"
-            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
-            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
-            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
-            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
-            "};\n"
-
-            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
-            "void CS_main(ComputeShaderInput IN){\n"
-            //uniform branch is cheap - im not worried here
-            "int2 texC = IN.dispatchThreadID.xy;\n"
-            "float Fr = FrameRatio;"
-            "\n"
-            "OutT[texC] = tex[0].Load(int3(texC,0))*Fr+tex[2].Load(int3(texC,0))*(1-Fr); \n"
-            "\n"
-            "\n"
-            "}\n"
-            ;
 
         FinalComputeLogicSoftBody1 = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
     }
     void CreateFinalComputeLogic1Shader() {
         if (FinalComputeLogic1 != nullptr) SafeRelease(FinalComputeLogic1);
 
-        const std::string s =
-            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
-
-            "cbuffer ConstDataFrame : register(b0){\n"
-            "float FrameRatio;\n"
-            "}\n"
-
-            "RWTexture2D<float4> OutT : register(u0);\n"
-            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
-            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
-            
-            "struct ComputeShaderInput\n"
-            "{\n"
-            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
-            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
-            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
-            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
-            "};\n"
-
-            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
-            "void CS_main(ComputeShaderInput IN){\n"
-            //uniform branch is cheap - im not worried here
-            "int2 texC = IN.dispatchThreadID.xy;\n"
-            "float Fr = FrameRatio;"
-            "\n"
-            "OutT[texC] = tex[0].Load(int3(texC,0))*Fr+tex[2].Load(int3(texC,0))*(1-Fr); \n"
-            "\n"
-            "\n"
-            "}\n"
-            ;
+        std::string s = SStringC.CreateFinalComputeLogic1Shader(BLOCK_SIZE, SampleSize);
 
         FinalComputeLogic1 = LoadShader<ID3D11ComputeShader>(&s, "CS_main", "latest", dxDevice.Get());
     }
@@ -509,7 +434,7 @@ struct MainDX11Objects {
 
         dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uav, 0);
 
-        if (HasSetVar = false) {
+        if (HasSetVar == false) {
             dxDeviceContext->CSSetShader(FinalComputeLogicSoftBody1, 0, 0);
 
             for (int i = 0; i < srv->size(); i++) {
@@ -568,7 +493,33 @@ struct MainDX11Objects {
         dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uavt, 0);
 
     }
+    void RunComputeRateOfChangeAndDist(ID3D11UnorderedAccessView* uav, ID3D11UnorderedAccessView* uav2, std::vector<ID3D11ShaderResourceView*>* srv) {
+        dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uav, 0);
+        dxDeviceContext->CSSetUnorderedAccessViews(1, 1, &uav2, 0);
 
+        dxDeviceContext->CSSetShaderResources(0, srv->size(), srv->data());
+
+        dxDeviceContext->CSSetConstantBuffers(0, 1, &Constants); //pre dist and Rate Of Change calc
+
+        dxDeviceContext->CSSetShader(ComputeRateOfChange, 0, 0);
+
+        dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
+
+
+
+        dxDeviceContext->CSSetShader(ComputeDistance, 0, 0); //dist calc
+        
+        dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
+
+
+        srv->clear();
+
+        ID3D11UnorderedAccessView* uavt = nullptr;
+
+        dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uavt, 0);
+        dxDeviceContext->CSSetUnorderedAccessViews(1, 1, &uavt, 0);
+
+    }
     void CreateConstantBuf() {
         D3D11_BUFFER_DESC bufDesc;
         ZeroMemory(&bufDesc, sizeof(bufDesc));
@@ -628,8 +579,9 @@ struct MainDX11Objects {
         
         UpdateConstantBuf();
 
-        CreatePixelFrequencyCalcShader();
-        
+        if(FFMPEG.ComputePixelChangeFrequency) CreatePixelFrequencyCalcShader();
+        if(FFMPEG.ComputeRateOfChange) CreateComputeRateOfChangeShader();
+
         if(FFMPEG.CompileLazyIntrop)
             CreateFinalComputeLogic1Shader();
         else if (FFMPEG.CompileSoftBodyIntrop) {
@@ -645,7 +597,7 @@ struct MainDX11Objects {
 
         std::string TrailZeros = "";
         addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(val).length()));
-        TrailZeros += std::to_string(val) + ".png";
+        TrailZeros += std::to_string(val) + "."+ fNameEnd;
 
         std::string workS = *psp + TrailZeros;
         if (fs::exists(workS)) {
@@ -654,7 +606,7 @@ struct MainDX11Objects {
             val += 1;
             TrailZeros = "";
             addZeroes(&TrailZeros, (ZERO_FILE_COUNT - std::to_string(val).length()));
-            TrailZeros += std::to_string(val) + ".png";
+            TrailZeros += std::to_string(val) + "."+ fNameEnd;
 
             return true;
         }
@@ -670,7 +622,7 @@ struct MainDX11Objects {
     int GetSplitPicCount(std::string* fsS) {
         int i = 0;
         for (auto& p : fs::directory_iterator(*fsS)) {
-            if(p.path().string().find(".png") != std::string::npos)
+            if(p.path().string().find("."+ fNameEnd) != std::string::npos)
             i++;
         }
         return i;
@@ -881,7 +833,7 @@ struct MainDX11Objects {
 
         if (!FFMPEG.DontBuildVideo) {
             std::string qs = R"(")";
-            std::string BuildVideo = qs + qs + FFMPEG.filePathNameffmpeg + qs + " -framerate " + std::to_string(TargetFrameRate) + " -i " + qs + FFMPEG.filePathNameStore + FFMPEG.EndProduct + "\%" + std::to_string(ZERO_FILE_COUNT) + "d.png" + qs + " -i " + qs + FFMPEG.filePathNameStore + FFMPEG.musicSplit + FFMPEG.musicName + qs + " -c:a copy -shortest -c:v libx264 -pix_fmt yuv420p " + qs + MovieOutDirL + FFMPEG.MovieOutName + qs+qs;
+            std::string BuildVideo = qs + qs + FFMPEG.filePathNameffmpeg + qs + " -framerate " + std::to_string(TargetFrameRate) + " -i " + qs + FFMPEG.filePathNameStore + FFMPEG.EndProduct + "\%" + std::to_string(ZERO_FILE_COUNT) + "d."+ fNameEnd + qs + " -i " + qs + FFMPEG.filePathNameStore + FFMPEG.musicSplit + FFMPEG.musicName + qs + " -c:a copy -shortest -c:v libx264 -pix_fmt yuv420p " + qs + MovieOutDirL + FFMPEG.MovieOutName + qs+qs;
 
             system(BuildVideo.c_str());
         }
@@ -914,9 +866,11 @@ struct MainDX11Objects {
             }
         }
 
-        validFolder.clear();
+        if(FFMPEG.CompileLazyIntrop) validFolder.clear();
+
 
         if (validFolder.size() != FFMPEG.ComputePassCount && !FFMPEG.CompileLazyIntrop) return false; //end early due to issue with files
+
 
         int RealFrameCount = std::floor((float(SplitPicCount) / float(CurrentFrameRate)) / (float(SplitPicCount) / float(TargetFrameRate))) * SplitPicCount;
 
@@ -995,6 +949,7 @@ struct MainDX11Objects {
                     ID3D11Resource* r = GetResourceOfUAVSRV(x.second);
                     SafeRelease(r);
                     SafeRelease(x.second);
+                    x.second = nullptr;
                     ToErase.push_back(x.first);
                 }
             }
@@ -1008,11 +963,19 @@ struct MainDX11Objects {
 
         if (FFMPEG.ComputePixelChangeFrequency) {
             MakeEmptyUAVfromSRVIntoMap(&PixelFMap[0], PerFrameRMap[i], i);
-
             RunPixelFrequency(PixelFMap[0][i], &srv);
         }
-        //
-        if (FFMPEG.ComputePixelChangeFrequency) {
+        if (FFMPEG.ComputeRateOfChange) {
+            MakeEmptyUAVfromSRVIntoMap(&PixelFMap[1], PerFrameRMap[i], i);
+            MakeEmptyUAVfromSRVIntoMap(&PixelFMap[2], PerFrameRMap[i], i, DXGI_FORMAT_R16G16B16A16_FLOAT); //using this tex since it can save as tex for other reasons which I want to do
+
+            RunComputeRateOfChangeAndDist(PixelFMap[1][i],PixelFMap[2][i], &srv);
+        }
+        //PerFrameRMap
+        if (FFMPEG.ComputePixelChangeFrequency && FFMPEG.NumToShow == 0) {
+            StopStallAndCheckPic(i, PixelFMap[FFMPEG.NumToShow][i]);
+        }
+        else if (FFMPEG.ComputeRateOfChange && FFMPEG.NumToShow == 1) {
             StopStallAndCheckPic(i, PixelFMap[FFMPEG.NumToShow][i]);
         }
         else{
@@ -1021,9 +984,10 @@ struct MainDX11Objects {
 
         for (int iter = 0; iter < PixelFMap.size(); iter++) {
             if (FFMPEG.SaveTex) {
+
                 std::string FPath = FFMPEG.filePathNameStore + std::to_string(iter) + "\\";
                 
-                if(i == 1)CleanDir(&FPath);
+                if(i == 1 && PixelFMap[iter].size()>0)CleanDir(&FPath);
                 
                 SaveUAVTexToFile(&PixelFMap[iter], &FPath);
             }
@@ -1119,20 +1083,20 @@ struct MainDX11Objects {
     }
     
 
-    void MakeEmptyUAVfromSRVIntoMap(std::map<int, ID3D11UnorderedAccessView*>* m, ID3D11ShaderResourceView* srv, int frame) {
+    void MakeEmptyUAVfromSRVIntoMap(std::map<int, ID3D11UnorderedAccessView*>* m, ID3D11ShaderResourceView* srv, int frame, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN) {
         if (m->count(frame) > 0) {
             ID3D11Resource* TexO = nullptr;
             (*m)[frame]->GetResource(&TexO);
             SafeRelease(TexO);
         }
-        (*m)[frame] = MakeEmptyUAVfromSRV(srv);
+        (*m)[frame] = MakeEmptyUAVfromSRV(srv, format);
 
         FLOAT fl[4] = { 0.0f,0.0f,0.0f,1.0f };
 
         dxDeviceContext->ClearUnorderedAccessViewFloat((*m)[frame], fl);
     }
 
-    ID3D11UnorderedAccessView* MakeEmptyUAVfromSRV(ID3D11ShaderResourceView* srv) {
+    ID3D11UnorderedAccessView* MakeEmptyUAVfromSRV(ID3D11ShaderResourceView* srv, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN) {
         D3D11_TEXTURE2D_DESC d;
         ComPtr<ID3D11Resource> r;
         srv->GetResource(&r);
@@ -1141,6 +1105,8 @@ struct MainDX11Objects {
 
         tex->GetDesc(&d);
         
+        if (format != DXGI_FORMAT_UNKNOWN) d.Format = format;
+
         ID3D11Texture2D* texUAV;
 
         d.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
@@ -1156,6 +1122,8 @@ struct MainDX11Objects {
 
         dxDevice->CreateUnorderedAccessView(texUAV,&uavs,&uav);
 
+
+        //SafeRelease(r);
         SafeRelease(texUAV);
 
         return uav;
@@ -1207,7 +1175,7 @@ struct MainDX11Objects {
     void NewDX11Object() {
         UINT createDeviceFlags = 0; //D3D11_CREATE_DEVICE_BGRA_SUPPORT should also be here if need be
 #if _DEBUG
-        createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG;
+        createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
         D3D_FEATURE_LEVEL featureLevels[] =

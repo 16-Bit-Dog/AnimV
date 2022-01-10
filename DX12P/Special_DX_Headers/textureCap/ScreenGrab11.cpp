@@ -654,6 +654,8 @@ namespace
 
         pTexture->GetDesc(&desc);
 
+
+
         ComPtr<ID3D11Device> d3dDevice;
         pContext->GetDevice(d3dDevice.GetAddressOf());
 
@@ -701,6 +703,9 @@ namespace
             assert(pStaging);
 
             pContext->CopyResource(pStaging.Get(), pTemp.Get());
+
+            pTexture->Release();
+            pTemp->Release();
         }
         else if ((desc.Usage == D3D11_USAGE_STAGING) && (desc.CPUAccessFlags & D3D11_CPU_ACCESS_READ))
         {
@@ -1233,6 +1238,9 @@ HRESULT DirectX::SaveWICTextureToFile(
 
         WICRect rect = { 0, 0, static_cast<INT>(desc.Width), static_cast<INT>(desc.Height) };
         hr = frame->WriteSource(FC.Get(), &rect);
+
+        source->Release();
+        FC->Release();
     }
     else
     {
@@ -1256,6 +1264,12 @@ HRESULT DirectX::SaveWICTextureToFile(
         return hr;
 
     delonfail.clear();
+
+    //stream->Release();
+    //encoder->Release();
+    //frame->Release();
+    //props->Release();
+    
 
     return S_OK;
 }

@@ -419,6 +419,8 @@ struct MASTER_Window : MASTER_Function_Inherit {
 
 				ImGui::Checkbox("Save Video Images\n", &FFMPEG.SaveTex);
 				
+				ImGui::HelpMarker("Split images first, then compute pass, then compile video");
+
 
 				ImGui::Checkbox("Cache Video Images\n", &FFMPEG.CacheVideoImages);
 				ImGui::SameLine();
@@ -429,7 +431,7 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				ImGui::HelpMarker("ONLY shows furthest up check box\n(priority system)");
 				*/
 
-				ImGui::InputInt("ComputeOutput to show", &FFMPEG.NumToShow);
+				ImGui::InputInt("Compute output to show", &FFMPEG.NumToShow);
 				ImGui::SameLine();
 				ImGui::HelpMarker("no compute output means that it just shows the video split into a video");
 
@@ -438,14 +440,14 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				ImGui::HelpMarker("+- frame count to check for data (should be 3-5)");
 
 
-				ImGui::Checkbox("Compute Pixel Frequency Trend\n", &FFMPEG.ComputePixelChangeFrequency);
-				
-				ImGui::Separator();
-				ImGui::Separator();
+				ImGui::Checkbox("Compute Pixel Frequency Trend - num 0\n", &FFMPEG.ComputePixelChangeFrequency);
+				ImGui::Checkbox("Compute Pixel Rate Of Change - num 1\n", &FFMPEG.ComputeRateOfChange);
+
 				
 				if (ImGui::Button("Run Compute Pass")) {
 					DXM.StartComputePass();
 				}
+
 				ImGui::SameLine();
 				ImGui::HelpMarker("Compute Data needed for compiling video");
 

@@ -13,11 +13,7 @@ struct MainDX11Objects;
 struct GLFW_Window_C;
 struct AllWindowDrawLoop;
 
-int Start() {
 
-	DXM.RendererStartUpLogic();
-	return 0;
-}
 
 int runMain() {
 	while (!glfwWindowShouldClose(MainWin.window)) {

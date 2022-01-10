@@ -49,6 +49,8 @@ inline void SafeRelease(T& ptr)
     }
 }
 
+
+
 ID3D11InputLayout* dxInputLayoutQuad;
 
 template< class ShaderClass >  //done here so you can do GetLatestProfile<ID3D11PixelShader>(); or related to make your own shaders and such - I implemented the hull shaders and such here so cohesiveness is kept to a maximum
@@ -259,3 +261,304 @@ ShaderClass* LoadShader(const std::string* shaderInfo, const std::string& entryP
 
     return pShader;
 }
+
+struct ShaderString {
+
+    std::string CreateFinalComputeLogic1Shader(int BLOCK_SIZE, int SampleSize) {
+        return (
+            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
+
+            "cbuffer ConstDataFrame : register(b0){\n"
+            "float FrameRatio;\n"
+            "}\n"
+
+            "RWTexture2D<unorm float4> OutT : register(u0);\n"
+            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
+            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
+
+            "struct ComputeShaderInput\n"
+            "{\n"
+            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
+            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
+            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
+            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
+            "};\n"
+
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_main(ComputeShaderInput IN){\n"
+            //uniform branch is cheap - im not worried here
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "float Fr = FrameRatio;"
+            "\n"
+            "OutT[texC] = tex[0].Load(int3(texC,0))*Fr+tex[2].Load(int3(texC,0))*(1-Fr); \n"
+            "\n"
+            "\n"
+            "}\n"
+            );
+    }
+
+
+    std::string FinalComputeLogicSoftBody1(int BLOCK_SIZE, int SampleSize) {
+        return (
+            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
+
+            "cbuffer ConstDataFrame : register(b0){\n"
+            "float FrameRatio;\n"
+            "}\n"
+
+            "RWTexture2D<unorm float4> OutT : register(u0);\n"
+            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
+            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
+            "Texture2D texFr[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1)) + ");\n" //frequency
+            "Texture2D texRc[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1)*2) + ");\n" //rate of change
+            "Texture2D texDc[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1) * 2) + ");\n" //rate of change
+
+            "struct ComputeShaderInput\n"
+            "{\n"
+            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
+            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
+            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
+            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
+            "};\n"
+
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_main(ComputeShaderInput IN){\n"
+
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "int2 distC = texDc[0].Load(int3(texC,0));\n"
+            "float Fr = FrameRatio;"
+            "\n"
+            "\n"
+            "float4 d1 = tex[0].Load(int3(texC, 0));\n"
+            "float4 d2 = tex[2].Load(int3(texC, 0));\n"
+            "float4 d1e = texRc[0].Load(int3(texC,0));\n"
+            "float4 final = d1;\n"
+           // "final.x = (d1.x*(d1e*Fr));\n"
+           // "final.y = (d1.y*(d1e*Fr));\n"
+           // "final.z = (d1.z*(d1e*Fr));\n"
+            "OutT[texC] = final;\n"
+            //"OutT[distC] = final;\n" TODO: use distance for value fixing to point on image
+            "\n"
+            "\n"
+            "\n"
+            "\n"
+            "\n"
+            "\n"
+            "\n"
+            "\n"
+            "}\n"
+            );
+    }
+
+    std::string CreatePixelFrequencyCalcShader(int BLOCK_SIZE, int SampleSize) {
+        /*
+        has the goal to flag pixels that change enough within a range of softbody change values to not make weird interpolation in the middle of nowhere
+        
+        */
+        return (
+            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
+
+            "cbuffer ConstData : register(b0){\n"
+            "int DepthSizeX;\n"
+            "int DepthSizeY;\n"
+            "uint pad4;\n"
+            "uint pad1;\n"
+            "uint3 numTG;\n"
+            "uint pad2;\n"
+            "uint3 TG;\n"
+            "uint pad3;\n"
+            "}\n"
+            "RWTexture2D<unorm float4> OutT : register(u0);\n"
+            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
+            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
+            "struct ComputeShaderInput\n"
+            "{\n"
+            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
+            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
+            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
+            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
+            "};\n"
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_main(ComputeShaderInput IN){\n"
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            //"OutT[IN.dispatchThreadID.xy] = tex[0].Load(int3(texCoord,0));"
+            "float4 max = 0.0f;\n"
+            "float4 cur = 0.0f;\n"
+            "\n"
+            "[unroll]\n"
+            "for(int i = 1; i < SampleSize; i++){\n"
+            "max+=float4(1.0f,1.0f,1.0f,1.0f);\n"
+            "cur+=tex[i].Load(int3(texC,0));\n"
+            "\n"
+            "}\n"
+            "float4 mmc = max-cur;\n"
+            "float4 tlM = tex[0].Load(int3(texC,0));\n"
+            "float x = 0.0f;\n"
+            "float y = 0.0f;\n"
+            "float z = 0.0f;\n"
+            "float Check = 0.0f;"
+            "float3 Comp = float3(abs(mmc.x-tlM.x),abs(mmc.y-tlM.y),abs(mmc.z-tlM.z));\n" //TODO: fix and make not dumb slow junk THIS CODE IS A SIN UPON GPU SHADER CODE
+            "if(Comp.x<0.2f) x=(Comp.x/0.2f); Check = 1.0f;\n"
+            "if(Comp.y<0.2f) y=(Comp.y/0.2f); Check = 1.0f;\n"
+            "if(Comp.z<0.2f) z=(Comp.z/0.2f); Check = 1.0f;\n"
+            "OutT[texC] = float4(x,y,z,Check);\n"
+            "\n"
+            "\n"
+            "}\n"
+            );
+        //TODO, use distance and rate of change to interpolate in between for new frames
+    }
+    std::string CreateRateOfChangeAndDistShader(int BLOCK_SIZE, int SampleSize) {
+        return ( //TODO: add goal from email - for now just remember it gets layer of imaging
+            "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
+            //The idea of this compute is to get rate of change for intrpolation of pixels mid frame so I know how to interpolate colors
+            "cbuffer ConstData : register(b0){\n"
+            "int DepthX;\n"
+            "int DepthY;\n"
+            "uint pad4;\n"
+            "uint pad1;\n"
+            "uint3 numTG;\n"
+            "uint pad2;\n"
+            "uint3 TG;\n"
+            "uint pad3;\n"
+            "}\n"
+            "#define MinR 0.9f\n"
+            "#define MaxR 1.1f\n"
+            "RWTexture2D<unorm float4> OutT : register(u0);\n"
+            "RWTexture2D<float4> OutRange : register(u1); \n"//compare texture is 0, rest is extra 
+
+            "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
+            "#define SampleNext " + std::to_string(SampleSize + 1) + "\n"
+            "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
+
+            "struct ComputeShaderInput\n"
+            "{\n"
+            "uint3 groupID : SV_GroupID;           // 3D index of the thread group in the dispatch.\n"
+            "uint3 dispatchThreadID : SV_DispatchThreadID;  // 3D index of global thread ID in the dispatch.\n"
+            "uint  groupIndex : SV_GroupIndex;        // Flattened local index of the thread within a thread group.\n"
+            "uint3 groupThreadID : SV_GroupThreadID;     // 3D index of local thread ID in a thread group.\n"
+            "};\n"
+
+            "groupshared uint AveragePostX = 0;\n"
+            "groupshared uint AveragePostY = 0;\n"
+            "groupshared uint AveragePostZ = 0;\n"
+            "groupshared float3 AveragePost = float3(0.0f,0.0f,0.0f);\n"
+            
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_main(ComputeShaderInput IN){\n"
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "float4 tM = tex[0].Load(int3(texC,0));\n"
+            "float4 tMn = tex[SampleNext].Load(int3(texC,0));\n"
+            //value cannot be bigger than 1000f, soooo: i'ma just multiply by 1000 --- 1/255 is max, so this is safe
+
+            "OutT[texC] = float4(tMn.x/tM.x,tMn.y/tM.y,tMn.z/tM.z,1.0f);\n"
+            
+            "InterlockedAdd(AveragePostX,int(tMn.x*1000.0f));\n" //get average of tile
+            "InterlockedAdd(AveragePostY,int(tMn.y*1000.0f));\n"
+            "InterlockedAdd(AveragePostZ,int(tMn.z*1000.0f));\n"
+
+            "GroupMemoryBarrierWithGroupSync();\n" // ensure average is calc'ed
+            "if(IN.groupIndex == 0){"
+            "AveragePost = float3(float(AveragePostX)/1000.0f,float(AveragePostY)/1000.0f,float(AveragePostZ)/1000.0f);"
+            "AveragePost /= BLOCK_SIZE*BLOCK_SIZE;\n"
+            "}"
+            "GroupMemoryBarrierWithGroupSync();\n" // ensure average is calc'ed
+
+            "OutRange[texC] = float4(AveragePost,1.0f);\n"
+/*       //     "[unroll]"
+            "for(int x = 0; x < BLOCK_SIZE; x++){\n" //highest chance no change, so check for no change in tile group, else you gonna be - goin far
+         //   "[unroll]"
+            "for(int y = 0; y < BLOCK_SIZE; y++){"
+            "if(all(maxAve>tex[0].Load(int3(int2(start.x+x,start.y+y),0)).xyz>minAve)) {\n"
+
+            "x=BLOCK_SIZE; y = BLOCK_SIZE; OutRange[texC] = float4(texC.x-start.x+x,texC.y-start.y+y,0.0f,0.0f);\n"
+
+            "}\n"
+            "}\n"
+            "}\n"            
+            */
+
+            "}\n" //TODO: for now I just store position of where the data for pixel prob- comes from, not distance.
+            //The goal of this shader is to fill my distance UAV which I stored in an average value by looking at every single block in a dispatch overall in a loop, for average colors in the tile being within range. if it is  within range I know the colors prob- came from that point meaning I can interpolate from those pixels. smaller range == more accuracy, but I'm trying 0.1f flat for now
+            
+            
+            "int Logic(ComputeShaderInput IN){"
+
+            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "float3 AverageP = OutRange[texC];"
+            "float3 minAve = AverageP*MinR;\n"
+            "float3 maxAve = AverageP*MaxR;\n"
+            //    "uint2 groupIndex = IN.groupIndex;\n" //so I don't conflict in T group when I read averages from UAV with each read
+            "uint2 groupID = IN.groupID.xy;\n"
+            "uint2 start = uint2(groupID.x*BLOCK_SIZE,groupID.y*BLOCK_SIZE);\n"
+
+            "for(int x = start+BLOCK_SIZE; x < DepthX; x+=BLOCK_SIZE){\n" //check greater than start
+
+            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
+            
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+
+            "if(all(maxAve>AverageP>minAve)) {\n"
+
+            "x= DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "for(int y = start-BLOCK_SIZE; y > 0; y-=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+
+            "if(all(maxAve>AverageP>minAve)) {\n"
+
+            "x= DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "}\n"
+
+            "for(int x = start-BLOCK_SIZE; x > 0; x-=BLOCK_SIZE){\n" //check greater than start
+
+            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+
+            "if(all(maxAve>AverageP>minAve)) {\n"
+
+            "x= DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "for(int y = start-BLOCK_SIZE; y > 0; y-=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+
+            "if(all(maxAve>AverageP>minAve)) {\n"
+
+            "x = DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+
+            "}\n"
+            "}\n"
+
+            "}"
+
+            "OutRange[texC] = float4(0.0f,0.0f,0.0f,1.0f);"
+
+            "return 0;"
+            "}"
+            
+            "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
+            "void CS_Dist(ComputeShaderInput IN){\n"
+
+            "Logic(IN);"
+
+
+            "\n"
+            "\n"
+            "\n"
+            "}\n"
+            );
+    }
+}SStringC;

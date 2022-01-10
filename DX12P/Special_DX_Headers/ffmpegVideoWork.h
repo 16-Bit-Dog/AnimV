@@ -26,14 +26,18 @@ struct FFMPEG_VIDEO_WORKER {
 	//toggle bools for compute
 	bool CacheVideoImages = false; // takes and caches main images in split images folder
 	bool ShowOutputPicture = true;
-	int NumToShow = 0;
-	int ComputePassCount = 1;
+	int NumToShow = 1;
+	int ComputePassCount = 3;
 	bool ComputePixelChangeFrequency = false; //means motion happened
-	bool SaveTex = false;
-	bool DontBuildVideo = true;
+	bool ComputeRateOfChange = true; //has 3
+
+	bool SaveTex = true;
+	bool DontBuildVideo = false;
 
 	bool CompileLazyIntrop = false;
 	bool CompileSoftBodyIntrop = true;
+	
+
 
 	//dir file path additions
 	std::string imageSplit = "ImageSplit\\";
@@ -117,7 +121,7 @@ struct FFMPEG_VIDEO_WORKER {
 		std::string FileSplitMusic = *dir + musicSplit;
 
 		std::string qs = R"(")";
-		std::string command = qs+*ffmpeg+qs + " -i " + qs+*vidPath + qs + " " + qs + FileSplitAllPath + "%08d.png"+qs;
+		std::string command = qs+*ffmpeg+qs + " -i " + qs+*vidPath + qs + " " + qs + FileSplitAllPath + "%"+ std::to_string(ZERO_FILE_COUNT)+"d."+ fNameEnd+qs;
 		std::string commandM = qs + *ffmpeg + qs + " -i " + qs + *vidPath + qs + " " + qs + FileSplitMusic + "%m.mp3" + qs;
 
 		system((qs+command+qs).c_str());
