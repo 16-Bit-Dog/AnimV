@@ -1,6 +1,7 @@
 #pragma once
 //finally I will try to use com_ptr's
 
+#define UNNegative 10000 //assume 10000 pixel video max
 
 #define WIN32_LEAN_AND_MEAN
 // DirectX 11 & windows specific headers.
@@ -40,12 +41,44 @@ void ThrowFailed(HRESULT v) {
     }
 }
 template<typename T>
+inline void SafeReleaseAll(T& ptr)
+{
+    if (ptr !=  nullptr)
+    {
+        
+#ifdef _DEBUG
+        long v = ptr->Release();
+        if (v != 0)
+        {
+            std::cout << "uh oh, refrence of: " + std::to_string(v) + "\n";
+            while (ptr->Release());
+        }
+
+
+#else
+        while(ptr->Release());
+#endif
+        ptr = nullptr;
+    }
+}
+template<typename T>
 inline void SafeRelease(T& ptr)
 {
-    if (ptr != NULL)
+    if (ptr != nullptr)
     {
+
+#ifdef _DEBUG
+        long v = ptr->Release();
+        if (v != 0)
+        {
+   //         std::cout << "uh oh, refrence of: " + std::to_string(v) + "\n";
+        }
+
+
+#else
         ptr->Release();
-//        ptr = NULL;
+#endif
+        ptr = nullptr;
     }
 }
 
@@ -298,8 +331,9 @@ struct ShaderString {
     }
 
 
-    std::string FinalComputeLogicSoftBody1(int BLOCK_SIZE, int SampleSize) {
+    std::string FinalComputeLogicSoftBody1(int BLOCK_SIZE, int SampleSize) { //TODO: fix and make interpolating
         return (
+            "#define UNNegative " + std::to_string(UNNegative) + "\n"
             "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
 
             "cbuffer ConstDataFrame : register(b0){\n"
@@ -310,8 +344,8 @@ struct ShaderString {
             "#define SampleSize " + std::to_string(SampleSize * 2 + 1) + "\n"
             "Texture2D tex[SampleSize] : register(t0); \n"//compare texture is 0, rest is extra 
             "Texture2D texFr[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1)) + ");\n" //frequency
-            "Texture2D texRc[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1)*2) + ");\n" //rate of change
-            "Texture2D texDc[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1) * 2) + ");\n" //rate of change
+            "Texture2D texRc[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1) * 2) + ");\n" //rate of change
+            "Texture2D texDc[SampleSize] : register(t" + std::to_string((SampleSize * 2 + 1) * 3) + ");\n" //rate of change
 
             "struct ComputeShaderInput\n"
             "{\n"
@@ -323,21 +357,23 @@ struct ShaderString {
 
             "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
             "void CS_main(ComputeShaderInput IN){\n"
-
+            "int2 GTID = IN.groupThreadID.xy;"
             "int2 texC = IN.dispatchThreadID.xy;\n"
-            "int2 distC = texDc[0].Load(int3(texC,0));\n"
-            "float Fr = FrameRatio;"
+            "float4 distC = texDc[0].Load(int3(texC,0));\n"
+            "float Fr = FrameRatio;\n"
+            "int2 tpos = texC+int2(int2(distC.x-UNNegative-BLOCK_SIZE+GTID.x,distC.y-UNNegative-BLOCK_SIZE+GTID.x)*Fr);"
             "\n"
             "\n"
             "float4 d1 = tex[0].Load(int3(texC, 0));\n"
-            "float4 d2 = tex[2].Load(int3(texC, 0));\n"
-            "float4 d1e = texRc[0].Load(int3(texC,0));\n"
-            "float4 final = d1;\n"
+            "float4 d2 = tex[2].Load(int3(tpos, 0));\n" //average data --distance to--> where I think data goes to
+
+            "float4 final = d1*Fr+d2*(1-Fr);\n"
            // "final.x = (d1.x*(d1e*Fr));\n"
            // "final.y = (d1.y*(d1e*Fr));\n"
            // "final.z = (d1.z*(d1e*Fr));\n"
-            "OutT[texC] = final;\n"
-            //"OutT[distC] = final;\n" TODO: use distance for value fixing to point on image
+            //"OutT[texC] = final;\n"
+            //
+            "OutT[texC] = final;\n"// TODO: use distance for value fixing to point on image
             "\n"
             "\n"
             "\n"
@@ -410,6 +446,7 @@ struct ShaderString {
     }
     std::string CreateRateOfChangeAndDistShader(int BLOCK_SIZE, int SampleSize) { //TODO: test if function calls are slower - I'm really - REALLY worried about unneeded copies - since it would do ***hundreds*** which could hurt render time by miles - I highly doubt the compiler could auto optimise this... since its runtime dependent too... but I should check and keep this in mind - keeps code cleaner
         return ( //TODO: add goal from email - for now just remember it gets layer of imaging
+            "#define UNNegative " + std::to_string(UNNegative) + "\n"
             "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
             //The idea of this compute is to get rate of change for intrpolation of pixels mid frame so I know how to interpolate colors
             "cbuffer ConstData : register(b0){\n"
@@ -422,8 +459,11 @@ struct ShaderString {
             "uint3 TG;\n"
             "uint pad3;\n"
             "}\n"
-            "#define MinR 0.9f\n"
-            "#define MaxR 1.1f\n"
+            
+            //range for +- avg
+            "#define MinR 0.95f\n"
+            "#define MaxR 1.05f\n"
+
             "RWTexture2D<unorm float4> OutT : register(u0);\n"
             "RWTexture2D<float4> OutRange : register(u1); \n"//compare texture is 0, rest is extra 
 
@@ -481,7 +521,7 @@ struct ShaderString {
             "}\n" //TODO: make it find shortest dist option - slower but more accurate interp
             //The goal of this shader is to fill my distance UAV which I stored in an average value by looking at every single block in a dispatch overall in a loop, for average colors in the tile being within range. if it is  within range I know the colors prob- came from that point meaning I can interpolate from those pixels. smaller range == more accuracy, but I'm trying 0.1f flat for now
             
-            
+            //Finds post position, so loads and checks pix pos
             "int Logic(ComputeShaderInput IN){"
 
             "int2 texC = IN.dispatchThreadID.xy;\n"
@@ -491,16 +531,20 @@ struct ShaderString {
             //    "uint2 groupIndex = IN.groupIndex;\n" //so I don't conflict in T group when I read averages from UAV with each read
             "uint2 groupID = IN.groupID.xy;\n"
             "uint2 start = uint2(groupID.x*BLOCK_SIZE,groupID.y*BLOCK_SIZE);\n"
+            "int depthXI = DepthX;"
+            "int depthYI = DepthY;"
 
-            "for(int x = start+BLOCK_SIZE; x < DepthX; x+=BLOCK_SIZE){\n" //check greater than start
+            "for(int x = start+BLOCK_SIZE; x < depthXI; x+=BLOCK_SIZE){\n" //check greater than start
 
-            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
+            "for(int y = start+BLOCK_SIZE; y < depthYI; y+=BLOCK_SIZE){"
             
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
 
-            "if(all(maxAve>AverageP>minAve)) {\n"
+            "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
-            "x= DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+            "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n"
+
+            "OutRange[texC] = float4(Loc.x-start.x+UNNegative,Loc.y-start.y+UNNegative,x,y); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
 
             "}\n"
             "}\n"
@@ -509,9 +553,11 @@ struct ShaderString {
 
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
 
-            "if(all(maxAve>AverageP>minAve)) {\n"
+                "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
-            "x= DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+                "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n"
+
+            "OutRange[texC] = float4(Loc.x-start.x+UNNegative,Loc.y-start.y+UNNegative,x,y); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
 
             "}\n"
             "}\n"
@@ -520,13 +566,15 @@ struct ShaderString {
 
             "for(int x = start-BLOCK_SIZE; x > 0; x-=BLOCK_SIZE){\n" //check greater than start
 
-            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
+            "for(int y = start+BLOCK_SIZE; y < depthYI; y+=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
 
-            "if(all(maxAve>AverageP>minAve)) {\n"
+                "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
-            "x= DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+            "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n"
+
+            "OutRange[texC] = float4(Loc.x-start.x+UNNegative,Loc.y-start.y+UNNegative,x,y); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
 
             "}\n"
             "}\n"
@@ -535,16 +583,18 @@ struct ShaderString {
 
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
 
-            "if(all(maxAve>AverageP>minAve)) {\n"
+                "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
-            "x = DepthX; y = DepthY; OutRange[texC] = float4(Loc.x-start.x,Loc.y-start.y,0.0f,1.0f); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+                "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n"
+
+            "OutRange[texC] = float4(Loc.x-start.x+UNNegative,Loc.y-start.y+UNNegative,x,y); return 0;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
 
             "}\n"
             "}\n"
 
             "}"
 
-            "OutRange[texC] = float4(0.0f,0.0f,0.0f,1.0f);"
+            "OutRange[texC] = float4(0.0f,0.0f,texC.x,texC.y);"
 
             "return 0;"
             "}"
@@ -552,7 +602,16 @@ struct ShaderString {
             "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
             "void CS_Dist(ComputeShaderInput IN){\n"
 
-            "Logic(IN);"
+            "Logic(IN);" //this one just takes first rather than doing everything always
+
+
+
+
+
+                ////////////////////////////////////////////////////////////////BELOW IS wait until end slow approach - checks each dir once for closest - prefrence same height
+
+
+
 
 
             "\n"
@@ -570,65 +629,87 @@ struct ShaderString {
             //    "uint2 groupIndex = IN.groupIndex;\n" //so I don't conflict in T group when I read averages from UAV with each read
             "uint2 groupID = IN.groupID.xy;\n"
             "uint2 start = uint2(groupID.x*BLOCK_SIZE,groupID.y*BLOCK_SIZE);\n"
-            "float2 Dist = float2(DepthX+1,DepthY+1);"
+            "int4 Dist = float4(DepthX+1,DepthY+1,0,0);"
 
-            "for(int x = start+BLOCK_SIZE; x < DepthX; x+=BLOCK_SIZE){\n" //check greater than start
+            "for(int y = start.y; y < DepthY; y+=BLOCK_SIZE){\n" //check greater than start
 
-            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
+
+            "for(int x = start.x; x < DepthX; x+=BLOCK_SIZE){"
+
+            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "int2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+
+            "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
+
+                "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
+
+            "Dist = int4(distT,x,y); x= DepthX; //; y = DepthY;\n" //x and y are stored for debug
+
+            "}\n"
+            "}\n"
+                "else x = DepthX;"
+            "}\n"
+
+            "for(int x = start.x; x > 0; x-=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
             "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
-            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
 
-            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+                    "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                    "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
+
+
+                    "if((Dist.x+Dist.y)>(distT.x+distT.y) && (maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
+
+                    "Dist = int4(distT,x,y); x = 0; // y = DepthY;\n" //x and y are stored for debug
 
             "}\n"
             "}\n"
+                "else x = 0;"
+            "}\n"
+            "}\n"
 
-            "for(int y = start-BLOCK_SIZE; y > 0; y-=BLOCK_SIZE){"
+            "for(int y = start.y; y > 0; y-=BLOCK_SIZE){\n" //check greater than start
+
+            "for(int x = start.x; x < DepthX; x+=BLOCK_SIZE){"
+
+                "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+                "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+                
+                "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
+
+                    "if((Dist.x+Dist.y)>(distT.x+distT.y) && (maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
+
+                    "Dist = int4(distT,x,y); x = DepthX; //y = 0;\n" //x and y are stored for debug
+            "}\n"
+            "}\n"
+            "else x = DepthX;"
+            "}\n"
+            
+
+            "for(int x = start.x; x > 0; x-=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
             "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
-            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
+                "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
-            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+                "if((Dist.x+Dist.y)>(distT.x+distT.y) && (maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
-            "}\n"
-            "}\n"
-
-            "}\n"
-
-            "for(int x = start-BLOCK_SIZE; x > 0; x-=BLOCK_SIZE){\n" //check greater than start
-
-            "for(int y = start+BLOCK_SIZE; y < DepthY; y+=BLOCK_SIZE){"
-
-            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
-            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
-            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
-
-            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
+                    "Dist = int4(distT,x,y); x= 0; //y = 0;\n" //x and y are stored for debug
 
             "}\n"
-            "}\n"
-
-            "for(int y = start-BLOCK_SIZE; y > 0; y-=BLOCK_SIZE){"
-
-            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
-            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
-            "if(all(maxAve>AverageP>minAve) && all(abs(Dist)>abs(distT))) {\n"
-
-            "x= DepthX; y = DepthY; Dist = distT;\n" //1.0f/x pos and y pos done to preseve pos rather than get dist
-
             "}\n"
             "}\n"
 
             "}"
-            "if(all(Dist == float2(DepthX + 1, DepthY + 1)))"
-            "OutRange[texC] = float4(0.0f,0.0f,0.0f,1.0f);"
-            "else OutRange[texC] = float4(Dist.x,Dist.y,0.0f,1.0f);"
+            "if(Dist.x == DepthX + 1 && Dist.y == DepthY + 1)" "OutRange[texC] = float4(0,0,texC.x,texC.y);" //nothing* color is gone
+            "else OutRange[texC] = float4(Dist.x+UNNegative,Dist.y+UNNegative,Dist.z,Dist.w);"
 
             "return 0;"
-            "}"
+            "}"//TODO: optimise this by smart skiping if's - dw about uniform, blocks are the same if I keep block semantics in use
 
 
 

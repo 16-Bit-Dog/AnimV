@@ -173,13 +173,13 @@ struct MainDX11Objects {
         ComPtr<ID3D11Texture2D> tex;
         Pic.As(&tex);
 
-        SafeRelease(Pic);
-
+        
         tex->GetDesc(&d);
 
         //dxDeviceContext->CopyResource(rtvR, Pic);
         dxDeviceContext->ResolveSubresource(rtvR,0,Pic.Get(),0,d.Format); //ignore mip copy
         
+        SafeRelease(Pic);
 
         ClearRTV = false;
     }
@@ -415,7 +415,17 @@ struct MainDX11Objects {
         ComputeDistance = LoadShader<ID3D11ComputeShader>(&s, "CS_Dist", "latest", dxDevice.Get());
         ComputeDistanceAccurate = LoadShader<ID3D11ComputeShader> (&s, "CS_DistA", "latest", dxDevice.Get());
     }
+    void CopyResourceFully(ID3D11View* in, ID3D11View* out) {
+        ComPtr<ID3D11Resource> inr;
+        inr = GetResourceOfUAVSRV(in);
+
+        ComPtr<ID3D11Resource> outr;
+        outr = GetResourceOfUAVSRV(out);
+
+        dxDeviceContext->CopyResource(outr.Get(), inr.Get());
+    }
     void CreateFinalComputeLogicSoftBody1Shader() {
+
         if (FinalComputeLogicSoftBody1 != nullptr) SafeRelease(FinalComputeLogicSoftBody1);
 
         const std::string s = SStringC.FinalComputeLogicSoftBody1(BLOCK_SIZE, SampleSize);
@@ -433,6 +443,8 @@ struct MainDX11Objects {
 
     void RunSoftBodyComputePass(ID3D11UnorderedAccessView* uav, std::map<int, std::vector<ID3D11ShaderResourceView*>>* srv, bool HasSetVar = false) {
 
+        CopyResourceFully((*srv)[0][0], uav); //copy base image to UAV
+
         dxDeviceContext->CSSetUnorderedAccessViews(0, 1, &uav, 0);
 
         if (HasSetVar == false) {
@@ -447,7 +459,7 @@ struct MainDX11Objects {
 
         dxDeviceContext->Dispatch(CDataS.numThreadGroups[0], CDataS.numThreadGroups[1], CDataS.numThreadGroups[2]);
 
-        srv->clear();
+    //    srv->clear();
 
         ID3D11UnorderedAccessView* uavt = nullptr;
 
@@ -699,8 +711,8 @@ struct MainDX11Objects {
             for (auto& x : y.second) {
                 if (InUseData[y.first].count(x.first) == 0) {
                     ID3D11Resource* r = GetResourceOfUAVSRV(x.second);
-                    SafeRelease(r);
-                    SafeRelease(x.second);
+                    SafeReleaseAll(r);
+                    SafeReleaseAll(x.second);
                     ToErase.push_back(x.first);
                 }
             }
@@ -730,10 +742,10 @@ struct MainDX11Objects {
         
         */
         int CapVal = std::floor((float(i) + 1) * fRat);
-        bool HasSetVar = false;
+        bool HasSetVar = false; 
         for (int x = std::floor(float(i) * fRat); x < CapVal; x++) { //new frames
 
-            UpdateFrameConstantBuf((CapVal + 1 - x) / fRat - 1); // 0.0-1.0f is [1]-> [0]    1.01f-2.0f [0]->[2]
+            UpdateFrameConstantBuf((CapVal - x) / fRat); // 0.0-1.0f is [1]-> [0]    1.01f-2.0f [0]->[2]
             //pass 1
             MakeEmptyUAVfromSRVIntoMap(&PixelFMap[0], (*srvM)[0][i], x);
 
@@ -752,7 +764,8 @@ struct MainDX11Objects {
 
             StopStallAndCheckPic(x, PixelFMap[0][x]);
         }
-        for (int iter = 0; iter < PixelFMap.size(); iter++) {
+        srv.clear();
+        for (int iter = 0; iter < PixelFMap.size(); iter++) {//TODO: after here is mem leak
             std::string FPath = FFMPEG.filePathNameStore + FFMPEG.EndProduct;
 
             if (i == 1)CleanDir(&FPath);
@@ -761,7 +774,6 @@ struct MainDX11Objects {
             
             CleanCacheResourceMap(&PixelFMap[iter]);
         }
-
 
         i += 1;
 
@@ -809,7 +821,7 @@ struct MainDX11Objects {
         while (i != tmp) {
             if (i > SampleSize + 1) {
                 for (auto x : srvM) {
-                    h = AddMainResourceToMapFromFile(&fsSU[x.first], tmp, &srvM[x.first]);
+                    h = AddMainResourceToMapFromFile(&fsSU[x.first], tmp, &srvM[x.first]); //30 kb of ram lost here? TODO THIS: 
                 }
             }
             if (h) {
@@ -818,6 +830,9 @@ struct MainDX11Objects {
             h = false;
 
             RunFinalImageCreationPassFrame(i, &srvM, SplitPicCount, RealFrameCount, FrameRatio);
+#ifdef _DEBUG
+            std::cout<<"\n";
+#endif // _DEBUG
 
             i += 1;
         }
@@ -1015,8 +1030,8 @@ struct MainDX11Objects {
         for (auto& i : (*m)) {
             ID3D11Resource* TexO = nullptr;
             i.second->GetResource(&TexO);
-            SafeRelease(i.second);
-            SafeRelease(TexO);
+            SafeReleaseAll(i.second);
+            SafeReleaseAll(TexO);
         }
         m->clear();
     }
