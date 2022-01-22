@@ -874,20 +874,26 @@ struct MainDX11Objects {
 
         int SplitPicCount = GetSplitPicCount(&fsS);
 
+
         for (int i = 0; i < validFolder.size(); i++) {
             std::string FPath = FFMPEG.filePathNameStore + std::to_string(i) + "\\";
-            if (GetSplitPicCount(&FPath) == SplitPicCount) validFolder[i] = i;
+
+            int Pcount = GetSplitPicCount(&FPath);
+
+            if (FFMPEG.allowPartCheck == false && Pcount == SplitPicCount) validFolder[i] = i;
+            else if (FFMPEG.allowPartCheck == true && Pcount != 0) validFolder[i] = i;
         }
         for (int i = 0; i < validFolder.size(); i++) {
             if (validFolder[i] == -1) {
-                validFolder.erase(validFolder.begin()+i);
+                validFolder.erase(validFolder.begin() + i);
                 i--;
             }
         }
 
+
         if(FFMPEG.CompileLazyIntrop) validFolder.clear();
 
-
+        
         if (validFolder.size() != FFMPEG.ComputePassCount && !FFMPEG.CompileLazyIntrop) return false; //end early due to issue with files
 
 

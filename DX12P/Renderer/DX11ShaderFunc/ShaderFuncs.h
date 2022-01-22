@@ -368,6 +368,8 @@ struct ShaderString {
             "float4 d2 = tex[2].Load(int3(tpos, 0));\n" //average data --distance to--> where I think data goes to
 
             "float4 final = d1*Fr+d2*(1-Fr);\n"
+            "if (Fr!=1.0f)"
+            "final = d2;\n"
            // "final.x = (d1.x*(d1e*Fr));\n"
            // "final.y = (d1.y*(d1e*Fr));\n"
            // "final.z = (d1.z*(d1e*Fr));\n"
@@ -461,8 +463,8 @@ struct ShaderString {
             "}\n"
             
             //range for +- avg
-            "#define MinR 0.95f\n"
-            "#define MaxR 1.05f\n"
+            "#define MinR 0.99f\n"
+            "#define MaxR 1.01f\n"
 
             "RWTexture2D<unorm float4> OutT : register(u0);\n"
             "RWTexture2D<float4> OutRange : register(u1); \n"//compare texture is 0, rest is extra 
@@ -629,7 +631,7 @@ struct ShaderString {
             //    "uint2 groupIndex = IN.groupIndex;\n" //so I don't conflict in T group when I read averages from UAV with each read
             "uint2 groupID = IN.groupID.xy;\n"
             "uint2 start = uint2(groupID.x*BLOCK_SIZE,groupID.y*BLOCK_SIZE);\n"
-            "int4 Dist = float4(DepthX+1,DepthY+1,0,0);"
+            "int4 Dist = float4(DepthX+DepthX,DepthY+DepthY,0,0);"
 
             "for(int y = start.y; y < DepthY; y+=BLOCK_SIZE){\n" //check greater than start
 
@@ -644,14 +646,14 @@ struct ShaderString {
 
                 "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
-            "Dist = int4(distT,x,y); x= DepthX; //; y = DepthY;\n" //x and y are stored for debug
+            "Dist = int4(distT,x,y); x = DepthX; //; y = DepthY;\n" //x and y are stored for debug
 
             "}\n"
             "}\n"
                 "else x = DepthX;"
             "}\n"
 
-            "for(int x = start.x; x > 0; x-=BLOCK_SIZE){"
+            "for(int x = start.x; x > -1; x-=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
             "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
@@ -670,7 +672,7 @@ struct ShaderString {
             "}\n"
             "}\n"
 
-            "for(int y = start.y; y > 0; y-=BLOCK_SIZE){\n" //check greater than start
+            "for(int y = start.y; y > -1; y-=BLOCK_SIZE){\n" //check greater than start
 
             "for(int x = start.x; x < DepthX; x+=BLOCK_SIZE){"
 
@@ -689,7 +691,7 @@ struct ShaderString {
             "}\n"
             
 
-            "for(int x = start.x; x > 0; x-=BLOCK_SIZE){"
+            "for(int x = start.x; x > -1; x-=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupID.x,y+groupID.y);"
             "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
@@ -705,7 +707,7 @@ struct ShaderString {
             "}\n"
 
             "}"
-            "if(Dist.x == DepthX + 1 && Dist.y == DepthY + 1)" "OutRange[texC] = float4(0,0,texC.x,texC.y);" //nothing* color is gone
+            "if(Dist.x == DepthX + DepthX && Dist.y == DepthY + DepthY)" "OutRange[texC] = float4(UNNegative,UNNegative,texC.x,texC.y);" //nothing* color is gone
             "else OutRange[texC] = float4(Dist.x+UNNegative,Dist.y+UNNegative,Dist.z,Dist.w);"
 
             "return 0;"

@@ -469,6 +469,8 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				}
 				ImGui::Checkbox("Don't Build Video (Debug)", &FFMPEG.DontBuildVideo);
 
+				ImGui::Checkbox("You Can Build Video with out correct Image \nRefrence Count", &FFMPEG.allowPartCheck);
+
 				ImGui::HelpMarker("Higher check box has more priority");
 
 				ImGui::Checkbox("Lazy Video Frame Interpolation", &FFMPEG.CompileLazyIntrop);
