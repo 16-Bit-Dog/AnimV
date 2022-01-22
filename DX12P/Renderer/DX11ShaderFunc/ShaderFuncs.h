@@ -463,8 +463,8 @@ struct ShaderString {
             "}\n"
             
             //range for +- avg
-            "#define MinR 0.99f\n"
-            "#define MaxR 1.01f\n"
+            "#define MinR 0.5f\n"
+            "#define MaxR 1.5f\n"
 
             "RWTexture2D<unorm float4> OutT : register(u0);\n"
             "RWTexture2D<float4> OutRange : register(u1); \n"//compare texture is 0, rest is extra 
@@ -484,27 +484,31 @@ struct ShaderString {
             "groupshared uint AveragePostX = 0;\n"
             "groupshared uint AveragePostY = 0;\n"
             "groupshared uint AveragePostZ = 0;\n"
-            "groupshared float3 AveragePost = float3(0.0f,0.0f,0.0f);\n"
             
             "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
             "void CS_main(ComputeShaderInput IN){\n"
             "int2 texC = IN.dispatchThreadID.xy;\n"
             "float4 tM = tex[0].Load(int3(texC,0));\n"
             "float4 tMn = tex[SampleNext].Load(int3(texC,0));\n"
+            "float3 AveragePost = float3(0.0f,0.0f,0.0f);\n"
+
             //value cannot be bigger than 1000f, soooo: i'ma just multiply by 1000 --- 1/255 is max, so this is safe
 
-            "OutT[texC] = float4(tMn.x/tM.x,tMn.y/tM.y,tMn.z/tM.z,1.0f);\n"
+            //"OutT[texC] = float4(tMn.x/tM.x,tMn.y/tM.y,tMn.z/tM.z,1.0f);\n"
             
+//            "InterlockedAdd(AveragePostX,int(tMn.x*1000.0f));\n" //get average of tile
+//            "InterlockedAdd(AveragePostY,int(tMn.y*1000.0f));\n"
+//            "InterlockedAdd(AveragePostZ,int(tMn.z*1000.0f));\n"
             "InterlockedAdd(AveragePostX,int(tMn.x*1000.0f));\n" //get average of tile
             "InterlockedAdd(AveragePostY,int(tMn.y*1000.0f));\n"
             "InterlockedAdd(AveragePostZ,int(tMn.z*1000.0f));\n"
 
             "GroupMemoryBarrierWithGroupSync();\n" // ensure average is calc'ed
-            "if(IN.groupIndex == 0){"
+          
             "AveragePost = float3(float(AveragePostX)/1000.0f,float(AveragePostY)/1000.0f,float(AveragePostZ)/1000.0f);"
             "AveragePost /= BLOCK_SIZE*BLOCK_SIZE;\n"
-            "}"
-            "GroupMemoryBarrierWithGroupSync();\n" // ensure average is calc'ed
+          
+            "OutT[texC] = float4(AveragePost,1.0f);\n"
 
             "OutRange[texC] = float4(AveragePost,1.0f);\n"
 /*       //     "[unroll]"
@@ -623,7 +627,7 @@ struct ShaderString {
 
 
             "int LogicA(ComputeShaderInput IN){"
-
+            "uint2 groupThreadID = IN.groupThreadID;\n"
             "int2 texC = IN.dispatchThreadID.xy;\n"
             "float3 AverageP = OutRange[texC];"
             "float3 minAve = AverageP*MinR;\n"
@@ -638,10 +642,10 @@ struct ShaderString {
 
             "for(int x = start.x; x < DepthX; x+=BLOCK_SIZE){"
 
-            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
             "int2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
 
-            "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
                 "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
                 "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
@@ -655,20 +659,20 @@ struct ShaderString {
 
             "for(int x = start.x; x > -1; x-=BLOCK_SIZE){"
 
-            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
             "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
 
-                    "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
                     "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
 
-                    "if((Dist.x+Dist.y)>(distT.x+distT.y) && (maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
+                    "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
                     "Dist = int4(distT,x,y); x = 0; // y = DepthY;\n" //x and y are stored for debug
 
             "}\n"
             "}\n"
-                "else x = 0;"
+                "else x = -1;"
             "}\n"
             "}\n"
 
@@ -676,13 +680,13 @@ struct ShaderString {
 
             "for(int x = start.x; x < DepthX; x+=BLOCK_SIZE){"
 
-                "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+                "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
                 "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
                 
-                "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
                 "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
-                    "if((Dist.x+Dist.y)>(distT.x+distT.y) && (maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
+                    "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
                     "Dist = int4(distT,x,y); x = DepthX; //y = 0;\n" //x and y are stored for debug
             "}\n"
@@ -693,22 +697,24 @@ struct ShaderString {
 
             "for(int x = start.x; x > -1; x-=BLOCK_SIZE){"
 
-            "int2 Loc = int2(x+groupID.x,y+groupID.y);"
+            "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
             "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
-                "if((Dist.x + Dist.y) > (distT.x + distT.y)){"
+                "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
                 "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
-                "if((Dist.x+Dist.y)>(distT.x+distT.y) && (maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
+                "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
                     "Dist = int4(distT,x,y); x= 0; //y = 0;\n" //x and y are stored for debug
 
             "}\n"
             "}\n"
+                "else x = -1;"
             "}\n"
 
             "}"
             "if(Dist.x == DepthX + DepthX && Dist.y == DepthY + DepthY)" "OutRange[texC] = float4(UNNegative,UNNegative,texC.x,texC.y);" //nothing* color is gone
-            "else OutRange[texC] = float4(Dist.x+UNNegative,Dist.y+UNNegative,Dist.z,Dist.w);"
+            "else" 
+                " OutRange[texC] = float4(Dist.x + UNNegative, Dist.y + UNNegative, Dist.z, Dist.w); "
 
             "return 0;"
             "}"//TODO: optimise this by smart skiping if's - dw about uniform, blocks are the same if I keep block semantics in use

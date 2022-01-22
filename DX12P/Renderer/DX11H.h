@@ -326,7 +326,7 @@ struct MainDX11Objects {
     std::vector<std::map<int, ID3D11UnorderedAccessView*>> PixelFMap;
     
 
-    int BLOCK_SIZE = 16;
+    int BLOCK_SIZE = 8;
     
     bool NewImGUIDat = false;
 

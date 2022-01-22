@@ -435,6 +435,10 @@ struct MASTER_Window : MASTER_Function_Inherit {
 				ImGui::SameLine();
 				ImGui::HelpMarker("no compute output means that it just shows the video split into a video");
 
+				ImGui::InputInt("Enter BLOCK_SIZE", &DXM.BLOCK_SIZE);
+				ImGui::SameLine();
+				ImGui::HelpMarker("for speed reasons - 6-16 should be optimal block size based on hardware");
+
 				ImGui::InputInt("Enter Sample Count", &DXM.SampleSize);
 				ImGui::SameLine();
 				ImGui::HelpMarker("+- frame count to check for data (should be 3-5)");
