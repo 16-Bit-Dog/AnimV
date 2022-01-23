@@ -461,7 +461,7 @@ struct ShaderString {
             "uint3 TG;\n"
             "uint pad3;\n"
             "}\n"
-            
+
             //range for +- avg
             "#define MinR 0.5f\n"
             "#define MaxR 1.5f\n"
@@ -484,32 +484,34 @@ struct ShaderString {
             "groupshared uint AveragePostX = 0;\n"
             "groupshared uint AveragePostY = 0;\n"
             "groupshared uint AveragePostZ = 0;\n"
-            
+            //"groupshared uint BLOCK_PASSED = 0;\n" //DEBUG VAR 
+
             "[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]\n"
             "void CS_main(ComputeShaderInput IN){\n"
             "int2 texC = IN.dispatchThreadID.xy;\n"
-            "float4 tM = tex[0].Load(int3(texC,0));\n"
+            //  "float4 tM = tex[0].Load(int3(texC,0));\n"
             "float4 tMn = tex[SampleNext].Load(int3(texC,0));\n"
             "float3 AveragePost = float3(0.0f,0.0f,0.0f);\n"
 
             //value cannot be bigger than 1000f, soooo: i'ma just multiply by 1000 --- 1/255 is max, so this is safe
 
             //"OutT[texC] = float4(tMn.x/tM.x,tMn.y/tM.y,tMn.z/tM.z,1.0f);\n"
-            
-//            "InterlockedAdd(AveragePostX,int(tMn.x*1000.0f));\n" //get average of tile
-//            "InterlockedAdd(AveragePostY,int(tMn.y*1000.0f));\n"
-//            "InterlockedAdd(AveragePostZ,int(tMn.z*1000.0f));\n"
-            "InterlockedAdd(AveragePostX,int(tMn.x*1000.0f));\n" //get average of tile
+
+            "GroupMemoryBarrierWithGroupSync();\n" // MUST be done for proper atomic usage
+
+            "InterlockedAdd(AveragePostX,int(tMn.x*1000.0f));\n" //get average of tile add up
             "InterlockedAdd(AveragePostY,int(tMn.y*1000.0f));\n"
             "InterlockedAdd(AveragePostZ,int(tMn.z*1000.0f));\n"
+            //"InterlockedAdd(BLOCK_PASSED,1);" //was getting inconsistant dispatch counts...
 
             "GroupMemoryBarrierWithGroupSync();\n" // ensure average is calc'ed
-          
+            
             "AveragePost = float3(float(AveragePostX)/1000.0f,float(AveragePostY)/1000.0f,float(AveragePostZ)/1000.0f);"
+            
             "AveragePost /= BLOCK_SIZE*BLOCK_SIZE;\n"
           
             "OutT[texC] = float4(AveragePost,1.0f);\n"
-
+            
             "OutRange[texC] = float4(AveragePost,1.0f);\n"
 /*       //     "[unroll]"
             "for(int x = 0; x < BLOCK_SIZE; x++){\n" //highest chance no change, so check for no change in tile group, else you gonna be - goin far
@@ -629,7 +631,7 @@ struct ShaderString {
             "int LogicA(ComputeShaderInput IN){"
             "uint2 groupThreadID = IN.groupThreadID;\n"
             "int2 texC = IN.dispatchThreadID.xy;\n"
-            "float3 AverageP = OutRange[texC];"
+            "float3 AverageP = OutRange[texC];\n"
             "float3 minAve = AverageP*MinR;\n"
             "float3 maxAve = AverageP*MaxR;\n"
             //    "uint2 groupIndex = IN.groupIndex;\n" //so I don't conflict in T group when I read averages from UAV with each read
@@ -714,7 +716,7 @@ struct ShaderString {
             "}"
             "if(Dist.x == DepthX + DepthX && Dist.y == DepthY + DepthY)" "OutRange[texC] = float4(UNNegative,UNNegative,texC.x,texC.y);" //nothing* color is gone
             "else" 
-                " OutRange[texC] = float4(Dist.x + UNNegative, Dist.y + UNNegative, Dist.z, Dist.w); "
+                " OutRange[texC] = float4(float(Dist.x + UNNegative), float(Dist.y + UNNegative), float(Dist.z), float(Dist.w)); "
 
             "return 0;"
             "}"//TODO: optimise this by smart skiping if's - dw about uniform, blocks are the same if I keep block semantics in use
