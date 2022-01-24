@@ -66,7 +66,7 @@ struct MainDX11Objects {
 
     int TargetFrameRate = 69;
 
-    int SampleSize = 1; //+- 3 frame + 1 current - TODO: make this SampleCount
+    int SampleSize = 1; 
 
     bool UseWarpDev = false;
 
@@ -765,7 +765,7 @@ struct MainDX11Objects {
             StopStallAndCheckPic(x, PixelFMap[0][x]);
         }
         srv.clear();
-        for (int iter = 0; iter < PixelFMap.size(); iter++) {//TODO: after here is mem leak
+        for (int iter = 0; iter < PixelFMap.size(); iter++) {
             std::string FPath = FFMPEG.filePathNameStore + FFMPEG.EndProduct;
 
             if (i == 1)CleanDir(&FPath);
@@ -859,7 +859,6 @@ struct MainDX11Objects {
         //
 
         SampleSize = OldSampleSize;
-        //TODO: use music and new folder with data to construct video with FFMPEG;
     }
 
     bool VideoCreationPass() {
@@ -1179,7 +1178,7 @@ struct MainDX11Objects {
         LPWSTR ws = LPWSTR(ca2w);
         
         HRESULT d = CreateWICTextureFromFile(dxDevice.Get(), dxDeviceContext.Get(),
-            ws, &tex, &srv, 0);//TODO: delete all mip's
+            ws, &tex, &srv, 0); 
         
         SafeRelease(tex);
 

@@ -1,7 +1,8 @@
 #pragma once
 //finally I will try to use com_ptr's
 
-#define UNNegative 10000 //assume 10000 pixel video max
+#define UNNegative 0 //assume 10000 pixel video max TODO FIX: wincodec stops working with unnegative at larger values
+
 
 #define WIN32_LEAN_AND_MEAN
 // DirectX 11 & windows specific headers.
@@ -336,6 +337,8 @@ struct ShaderString {
             "#define UNNegative " + std::to_string(UNNegative) + "\n"
             "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
 
+            "#define SampleNext " + std::to_string(SampleSize + 1) + "\n"
+
             "cbuffer ConstDataFrame : register(b0){\n"
             "float FrameRatio;\n"
             "}\n"
@@ -359,13 +362,13 @@ struct ShaderString {
             "void CS_main(ComputeShaderInput IN){\n"
             "int2 GTID = IN.groupThreadID.xy;"
             "int2 texC = IN.dispatchThreadID.xy;\n"
-            "float4 distC = texDc[0].Load(int3(texC,0));\n"
+            "int4 distC = trunc(texDc[0].Load(int3(texC,0)));\n" //trunication stops the innacuracy of WCI loader from mattering - yes, WCI loader is inaccurate... weird... but for 16 bpc stuff, very slight inaccuracy though - and within decimal for ints (probably to format to a viewable format)
             "float Fr = FrameRatio;\n"
-            "int2 tpos = texC+int2(int2(distC.x-UNNegative-BLOCK_SIZE+GTID.x,distC.y-UNNegative-BLOCK_SIZE+GTID.x)*Fr);"
+            "int2 tpos = texC+trunc(int2(distC.x-UNNegative,distC.y-UNNegative)*Fr);\n"
             "\n"
             "\n"
             "float4 d1 = tex[0].Load(int3(texC, 0));\n"
-            "float4 d2 = tex[2].Load(int3(tpos, 0));\n" //average data --distance to--> where I think data goes to
+            "float4 d2 = tex[SampleNext].Load(int3(tpos, 0));\n" //average data --distance to--> where I think data goes to
 
             "float4 final = d1*Fr+d2*(1-Fr);\n"
             "if (Fr!=1.0f)"
@@ -375,7 +378,8 @@ struct ShaderString {
            // "final.z = (d1.z*(d1e*Fr));\n"
             //"OutT[texC] = final;\n"
             //
-            "OutT[texC] = final;\n"// TODO: use distance for value fixing to point on image
+
+            "OutT[texC] = final;\n"
             "\n"
             "\n"
             "\n"
@@ -444,10 +448,9 @@ struct ShaderString {
             "\n"
             "}\n"
             );
-        //TODO, use distance and rate of change to interpolate in between for new frames
     }
-    std::string CreateRateOfChangeAndDistShader(int BLOCK_SIZE, int SampleSize) { //TODO: test if function calls are slower - I'm really - REALLY worried about unneeded copies - since it would do ***hundreds*** which could hurt render time by miles - I highly doubt the compiler could auto optimise this... since its runtime dependent too... but I should check and keep this in mind - keeps code cleaner
-        return ( //TODO: add goal from email - for now just remember it gets layer of imaging
+    std::string CreateRateOfChangeAndDistShader(int BLOCK_SIZE, int SampleSize) { 
+        return ( 
             "#define UNNegative " + std::to_string(UNNegative) + "\n"
             "#define BLOCK_SIZE " + std::to_string(BLOCK_SIZE) + "\n"
             //The idea of this compute is to get rate of change for intrpolation of pixels mid frame so I know how to interpolate colors
@@ -463,8 +466,8 @@ struct ShaderString {
             "}\n"
 
             //range for +- avg
-            "#define MinR 0.5f\n"
-            "#define MaxR 1.5f\n"
+            "#define MinR 0.9f\n"
+            "#define MaxR 1.1f\n"
 
             "RWTexture2D<unorm float4> OutT : register(u0);\n"
             "RWTexture2D<float4> OutRange : register(u1); \n"//compare texture is 0, rest is extra 
@@ -490,7 +493,7 @@ struct ShaderString {
             "void CS_main(ComputeShaderInput IN){\n"
             "int2 texC = IN.dispatchThreadID.xy;\n"
             //  "float4 tM = tex[0].Load(int3(texC,0));\n"
-            "float4 tMn = tex[SampleNext].Load(int3(texC,0));\n"
+            "float4 tMn = tex[0].Load(int3(texC,0));\n"
             "float3 AveragePost = float3(0.0f,0.0f,0.0f);\n"
 
             //value cannot be bigger than 1000f, soooo: i'ma just multiply by 1000 --- 1/255 is max, so this is safe
@@ -526,13 +529,13 @@ struct ShaderString {
             "}\n"            
             */
 
-            "}\n" //TODO: make it find shortest dist option - slower but more accurate interp
+            "}\n" 
             //The goal of this shader is to fill my distance UAV which I stored in an average value by looking at every single block in a dispatch overall in a loop, for average colors in the tile being within range. if it is  within range I know the colors prob- came from that point meaning I can interpolate from those pixels. smaller range == more accuracy, but I'm trying 0.1f flat for now
             
             //Finds post position, so loads and checks pix pos
             "int Logic(ComputeShaderInput IN){"
 
-            "int2 texC = IN.dispatchThreadID.xy;\n"
+            "int2 texC = IN.dispatchThreadID.xy;\n"// TODO: update lazy func
             "float3 AverageP = OutRange[texC];"
             "float3 minAve = AverageP*MinR;\n"
             "float3 maxAve = AverageP*MaxR;\n"
@@ -637,7 +640,7 @@ struct ShaderString {
             //    "uint2 groupIndex = IN.groupIndex;\n" //so I don't conflict in T group when I read averages from UAV with each read
             "uint2 groupID = IN.groupID.xy;\n"
             "uint2 start = uint2(groupID.x*BLOCK_SIZE,groupID.y*BLOCK_SIZE);\n"
-            "int4 Dist = float4(DepthX+DepthX,DepthY+DepthY,0,0);"
+            "int4 Dist = int4(DepthX+DepthX,DepthY+DepthY,0,0);" //I used a float for the int4 assign and it broke the entire shader... huh... neat
 
             "for(int y = start.y; y < DepthY; y+=BLOCK_SIZE){\n" //check greater than start
 
@@ -645,14 +648,15 @@ struct ShaderString {
             "for(int x = start.x; x < DepthX; x+=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
-            "int2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+                "int2 distT = int2(x-start.x,y-start.y);"
 
                 "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
+
                 "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
                 "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
-            "Dist = int4(distT,x,y); x = DepthX; //; y = DepthY;\n" //x and y are stored for debug
+            "Dist = int4(distT,x,y); x = DepthX; y = DepthY; break;\n" //x and y are stored for debug
 
             "}\n"
             "}\n"
@@ -662,7 +666,7 @@ struct ShaderString {
             "for(int x = start.x; x > -1; x-=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
-            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+            "int2 distT = int2(x-start.x,y-start.y);"
 
                 "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
                     "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
@@ -670,7 +674,7 @@ struct ShaderString {
 
                     "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
-                    "Dist = int4(distT,x,y); x = 0; // y = DepthY;\n" //x and y are stored for debug
+                    "Dist = int4(distT,x,y); x = 0; y = DepthY; break;\n" //x and y are stored for debug
 
             "}\n"
             "}\n"
@@ -683,14 +687,14 @@ struct ShaderString {
             "for(int x = start.x; x < DepthX; x+=BLOCK_SIZE){"
 
                 "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
-                "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
-                
+                "int2 distT = int2(x-start.x,y-start.y);"
+
                 "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
                 "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
                     "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
-                    "Dist = int4(distT,x,y); x = DepthX; //y = 0;\n" //x and y are stored for debug
+                    "Dist = int4(distT,x,y); x = DepthX; y = -1; break;\n" //x and y are stored for debug
             "}\n"
             "}\n"
             "else x = DepthX;"
@@ -700,13 +704,13 @@ struct ShaderString {
             "for(int x = start.x; x > -1; x-=BLOCK_SIZE){"
 
             "int2 Loc = int2(x+groupThreadID.x,y+groupThreadID.y);"
-            "float2 distT = float2(Loc.x-start.x,Loc.y-start.y);"
+                "int2 distT = int2(x-start.x,y-start.y);"
                 "if((abs(Dist.x) + abs(Dist.y)) > (abs(distT.x) + abs(distT.y))){"
                 "float3 Comp = tex[2].Load(int3(Loc, 0)).xyz;"
 
                 "if((maxAve.x>Comp.x>minAve.x) && (maxAve.y>Comp.y>minAve.y) && (maxAve.z>Comp.z>minAve.z)) {\n" //compare distance to make sure you are greater dist to change to closer
 
-                    "Dist = int4(distT,x,y); x= 0; //y = 0;\n" //x and y are stored for debug
+                    "Dist = int4(distT,x,y); x= 0; y = -1; break;\n" //x and y are stored for debug
 
             "}\n"
             "}\n"
@@ -719,8 +723,7 @@ struct ShaderString {
                 " OutRange[texC] = float4(float(Dist.x + UNNegative), float(Dist.y + UNNegative), float(Dist.z), float(Dist.w)); "
 
             "return 0;"
-            "}"//TODO: optimise this by smart skiping if's - dw about uniform, blocks are the same if I keep block semantics in use
-
+            "}"
 
 
 
