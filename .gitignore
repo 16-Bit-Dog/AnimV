@@ -11,4 +11,5 @@ Directory.txt
 DX12P/vidPath.txt
 vidPath.txt
 *.log
+DX12P/imgui.ini
 imgui.ini
