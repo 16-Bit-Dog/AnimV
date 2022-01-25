@@ -1,0 +1,3 @@
+# AnimV
+This is a project with the goal of analysing an image mathimatically for allowing free modifications of video content
+... its not the best - nor worst working project out there... 
