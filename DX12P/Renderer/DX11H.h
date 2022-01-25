@@ -2,7 +2,7 @@
 //finally I will try to use com_ptr's
 
 //TODO use RGB without A maybe
-
+//TODO: custom range max for interp
 #define WIN32_LEAN_AND_MEAN
 const int ZERO_FILE_COUNT = 8;
 const std::string fNameEnd = "BMP";

@@ -4,6 +4,11 @@ x64/
 .git/
 DX12P/Debug/
 DX12P/x64/
-DX12P/x64/
 DX12P/imGUI/imgui-docking/
 DX12P/Ignore/
+DX12P/Directory.txt
+Directory.txt
+DX12P/vidPath.txt
+vidPath.txt
+*.log
+imgui.ini
