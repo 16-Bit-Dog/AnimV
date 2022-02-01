@@ -28,6 +28,8 @@ const std::string fNameEnd = "BMP";
 //using namespace Gdiplus;
 //#pragma comment (lib,"Gdiplus.lib")
 
+//TODO: use unordered map
+
 using namespace Microsoft::WRL;
 
 
