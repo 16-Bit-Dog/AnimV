@@ -639,9 +639,11 @@ struct MainDX11Objects {
 
     int GetSplitPicCount(std::string* fsS) {
         int i = 0;
-        for (auto& p : fs::directory_iterator(*fsS)) {
-            if(p.path().string().find("."+ fNameEnd) != std::string::npos)
-            i++;
+        if (fs::exists(*fsS)) {
+            for (auto& p : fs::directory_iterator(*fsS)) {
+                if (p.path().string().find("." + fNameEnd) != std::string::npos)
+                    i++;
+            }
         }
         return i;
     }
