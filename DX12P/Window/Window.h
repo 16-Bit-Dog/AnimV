@@ -181,15 +181,17 @@ void AllWindowDrawLoop::LoopRunAllContext() {
 			WinList[i]->id = i;
 		}
 
-		DXM.ImGUINewFrameLogic();
-
+		
 		for (int i = 0; i < WinList.size(); i++) {
 
 				CurrWindow = i;
+				
 
 				glfwMakeContextCurrent(WinList[i]->window);
 				glfwPollEvents();
 				
+				DXM.ImGUINewFrameLogic();
+
 
 				WinList[i]->RunWindowLogic();
 
