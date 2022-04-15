@@ -1,7 +1,21 @@
 # AnimV
 This is a project with the goal of analysing an image mathimatically for allowing free modifications of video content
 ... its not the best - nor worst working project out there... 
-
+ 
+To Use Steps:
+1. click `Open MP4` and choose .mp4 file
+2. click `Open FFMPEG` to choose ffmpeg.exe
+3. choose `Directory For Video Frame Output` to set directory of all output
+4. click `Split Video Into Seperate Frames` <-- done for every new video loaded to split video into seperate frames
+5. Click `Set Paths To Cache` to store all of the open'ed files for later use
+6. check true `Save Video Images`
+7. `Cache Video Images` takes lots of RAM but greatly speeds up code
+8. choose Compute output to show --> num 0 and 1 are pixel frequency and rate of change
+9. block_size is generally a bad idea to play around with
+10. Sample count is amount of data forward and back to sample from (slower but accurate)
+11. check num 0 and num 1 --> Compute accurate is slow but good for data accuracy of output 
+12.  `run compute pass`
+13.  choose FPS's of current and post --> use `soft body` frame interpolation for accurate attempt at interpolating
 
 glfw license (All rights and material to glfw3 are reserved by the glfw orginization):
 /*************************************************************************
