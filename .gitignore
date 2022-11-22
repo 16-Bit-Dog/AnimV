@@ -13,3 +13,5 @@ vidPath.txt
 *.log
 DX12P/imgui.ini
 imgui.ini
+*.mp4
+*.exe

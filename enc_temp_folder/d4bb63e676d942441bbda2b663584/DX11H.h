@@ -912,9 +912,6 @@ struct MainDX11Objects {
 
     void CheckIfINeedToSplitAgain() {
         std::string FPath = FFMPEG.filePathNameStore + FFMPEG.imageSplit;
-        if (!std::filesystem::exists(FPath)) { 
-            std::filesystem::create_directories(FPath); 
-        }
         if (fs::is_directory(FFMPEG.filePathNameStore) && !std::filesystem::is_empty(FPath)) {
 
         }
