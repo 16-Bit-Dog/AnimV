@@ -446,7 +446,7 @@ struct MASTER_Window : MASTER_Function_Inherit {
 
 				ImGui::Checkbox("Compute Pixel Frequency Trend - num 0\n", &FFMPEG.ComputePixelChangeFrequency);
 				ImGui::Checkbox("Compute Pixel Rate Of Change - num 1\n", &FFMPEG.ComputeRateOfChange);
-				ImGui::Indent(); ImGui::Checkbox("Compute dist. accurate\n", &FFMPEG.ComputeDistAccurate);
+				ImGui::Indent(); ImGui::Checkbox("Compute dist. accurate - no way to show for now\n", &FFMPEG.ComputeDistAccurate);
 				
 				ImGui::Unindent();
 				if (ImGui::Button("Run Compute Pass")) {
